@@ -17,6 +17,7 @@ import {
   DictionaryDomainError,
   getDictionaryHistory,
   getDictionarySuggestions,
+  fetchDictionaryAudio,
   lookupDictionary,
   normalizeDictionaryTerm,
 } from '../../worker/services/dictionary'
@@ -29,7 +30,8 @@ const fixture = [
     phonetics: [
       {
         text: '/rɪˈzɪliənt/',
-        audio: 'https://audio.example.invalid/resilient.mp3',
+        audio:
+          'https://api.dictionaryapi.dev/media/pronunciations/en/resilient-us.mp3',
         sourceUrl: 'https://source.example.invalid/audio',
         license: {
           name: 'BY-SA 4.0',
@@ -191,6 +193,36 @@ describe('Free Dictionary Provider', () => {
     expect(JSON.stringify(result.entries)).not.toMatch(/<img|<b|onerror/i)
   })
 
+  it('proxies an allowlisted pronunciation with range and audio headers intact', async () => {
+    let forwardedRange = ''
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+        forwardedRange = new Headers(init?.headers).get('range') ?? ''
+        return Promise.resolve(
+          new Response(new Uint8Array([1, 2, 3]), {
+            status: 206,
+            headers: {
+              'accept-ranges': 'bytes',
+              'content-range': 'bytes 0-2/3',
+              'content-type': 'audio/mpeg',
+            },
+          }),
+        )
+      }),
+    )
+    const response = await fetchDictionaryAudio({
+      rawSource:
+        'https://api.dictionaryapi.dev/media/pronunciations/en/resilient-us.mp3',
+      range: 'bytes=0-2',
+    })
+    expect(response.status).toBe(206)
+    expect(response.headers.get('content-type')).toBe('audio/mpeg')
+    expect(response.headers.get('content-range')).toBe('bytes 0-2/3')
+    expect(forwardedRange).toBe('bytes=0-2')
+    expect((await response.arrayBuffer()).byteLength).toBe(3)
+  })
+
   it('surfaces 404 and retries then preserves a 429 response', async () => {
     const provider = new FreeDictionaryProvider(
       'https://provider.example.invalid/entries/en',
@@ -272,6 +304,9 @@ describe('dictionary normalization, D1 cache, and saved terms', () => {
     })
 
     expect(first.cacheStatus).toBe('miss')
+    expect(first.entries[0].pronunciations[0].audioUrl).toMatch(
+      /^\/api\/dictionary\/audio\?src=/,
+    )
     expect(second.cacheStatus).toBe('fresh')
     expect(provider.calls).toBe(1)
     const cached = await getDictionaryCache(env.DB, 'resilientcache')

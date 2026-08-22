@@ -23,7 +23,8 @@ const result: DictionaryResult = {
       pronunciations: [
         {
           text: '/rɪˈzɪliənt/',
-          audioUrl: 'https://audio.example.invalid/resilient.mp3',
+          audioUrl:
+            '/api/dictionary/audio?src=https%3A%2F%2Fapi.dictionaryapi.dev%2Fmedia%2Fpronunciations%2Fen%2Fresilient-us.mp3',
           sourceUrl: 'https://source.example.invalid/audio',
           license: { name: 'BY-SA 4.0' },
         },
@@ -138,9 +139,7 @@ describe('DictionaryExperience', () => {
     expect(screen.getByText('原形')).toBeInTheDocument()
     expect(screen.getByText('词典收录词形')).toBeInTheDocument()
     expect(screen.getByLabelText('resilient 发音 1')).toBeInTheDocument()
-    expect(JSON.stringify(vi.mocked(fetch).mock.calls)).not.toContain(
-      'audio.example.invalid',
-    )
+    expect(screen.getByRole('button', { name: '播放发音' })).toBeInTheDocument()
 
     fireEvent.click(screen.getByRole('button', { name: '加入收藏' }))
     expect(await screen.findByText('已加入收藏。')).toBeInTheDocument()

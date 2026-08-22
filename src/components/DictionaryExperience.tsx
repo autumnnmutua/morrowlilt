@@ -49,6 +49,61 @@ function TermList({ label, terms }: { label: string; terms: string[] }) {
   )
 }
 
+function PronunciationPlayer({
+  audioUrl,
+  headword,
+  index,
+}: {
+  audioUrl: string
+  headword: string
+  index: number
+}) {
+  const audio = useRef<HTMLAudioElement>(null)
+  const [playbackStatus, setPlaybackStatus] = useState('')
+
+  const play = async () => {
+    setPlaybackStatus('正在加载发音…')
+    try {
+      if (!audio.current) throw new Error('Audio element unavailable')
+      audio.current.currentTime = 0
+      await audio.current.play()
+      setPlaybackStatus('正在播放')
+    } catch {
+      if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
+        window.speechSynthesis.cancel()
+        const utterance = new SpeechSynthesisUtterance(headword)
+        utterance.lang = 'en-US'
+        window.speechSynthesis.speak(utterance)
+        setPlaybackStatus('来源音频不可用，已改用设备英语发音。')
+      } else {
+        setPlaybackStatus('当前设备无法播放该发音，请稍后重试。')
+      }
+    }
+  }
+
+  return (
+    <div className="pronunciation-player">
+      <audio
+        aria-label={`${headword} 发音 ${index + 1}`}
+        onEnded={() => setPlaybackStatus('播放完成')}
+        preload="metadata"
+        ref={audio}
+        src={audioUrl}
+      />
+      <button
+        className="button button--secondary"
+        onClick={() => void play()}
+        type="button"
+      >
+        播放发音
+      </button>
+      <span aria-live="polite" className="field-note" role="status">
+        {playbackStatus}
+      </span>
+    </div>
+  )
+}
+
 function partOfSpeechLabel(label: string): string {
   const normalized = label.toLowerCase()
   const chinese: Record<string, string> = {
@@ -168,14 +223,14 @@ export function DictionaryExperience() {
           ? '当前显示最近一次保存的词条。'
           : '词条已加载。',
       )
-      await loadHistory()
+      void loadHistory()
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
       if (error instanceof ApiError && error.code === 'DICTIONARY_NOT_FOUND') {
         setResult(undefined)
         setStatus('empty')
         setMessage('没有找到对应词条。请检查拼写或尝试更短的表达。')
-        await loadHistory()
+        void loadHistory()
         return
       }
       setStatus('error')
@@ -417,11 +472,10 @@ export function DictionaryExperience() {
                       <div key={`${item.text ?? 'audio'}-${index}`}>
                         <span>{item.text ?? '发音音频'}</span>
                         {item.audioUrl && (
-                          <audio
-                            aria-label={`${entry.headword} 发音 ${index + 1}`}
-                            controls
-                            preload="none"
-                            src={item.audioUrl}
+                          <PronunciationPlayer
+                            audioUrl={item.audioUrl}
+                            headword={entry.headword}
+                            index={index}
                           />
                         )}
                         {item.sourceUrl && (

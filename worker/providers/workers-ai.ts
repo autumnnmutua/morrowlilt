@@ -317,7 +317,7 @@ export class WorkersAiDictionaryTranslationProvider implements DictionaryTransla
       }
     }
     await Promise.all(
-      Array.from({ length: Math.min(2, chunks.length) }, translateNextChunk),
+      Array.from({ length: Math.min(4, chunks.length) }, translateNextChunk),
     )
     return translated.map((translatedText) => ({
       translatedText,

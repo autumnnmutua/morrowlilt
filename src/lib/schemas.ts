@@ -190,6 +190,8 @@ export const quizReportSchema = z.object({
       standardAnswer: nonEmpty,
       acceptableAnswers: z.array(nonEmpty),
       explanation: nonEmpty,
+      responseExplanation: nonEmpty,
+      eliminationSteps: z.array(nonEmpty),
       isCorrect: z.boolean(),
       score: z.number().nonnegative(),
       durationMs: z.number().int().nonnegative(),
@@ -225,7 +227,12 @@ export const dictionaryResultSchema = z.object({
       pronunciations: z.array(
         z.object({
           text: z.string().optional(),
-          audioUrl: z.string().url().optional(),
+          audioUrl: z
+            .union([
+              z.string().url(),
+              z.string().startsWith('/api/dictionary/audio?src='),
+            ])
+            .optional(),
           sourceUrl: z.string().url().optional(),
           license: licenseSchema.optional(),
         }),
