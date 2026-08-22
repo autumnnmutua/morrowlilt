@@ -18,6 +18,7 @@
     "required": [
       "ADMIN_API_KEY",
       "RESEND_API_KEY",
+      "USER_SECRET_ENCRYPTION_KEY",
       "RECIPIENT_EMAIL",
       "MAIL_FROM",
       "ACCESS_TEAM_DOMAIN",
@@ -33,7 +34,7 @@
     },
   ],
   "triggers": {
-    "crons": ["0 15 * * *"],
+    "crons": ["0 * * * *"],
   },
   "observability": {
     "enabled": true,

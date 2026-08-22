@@ -26,10 +26,14 @@ async function signedAccessToken(input: {
   const { privateKey, publicKey } = await generateKeyPair('RS256')
   const publicJwk = await exportJWK(publicKey)
   publicJwk.kid = 'access-test-key'
-  const token = await new SignJWT({ email: 'masked-user' })
+  const token = await new SignJWT({
+    email: ['masked-user', 'example.invalid'].join('@'),
+    type: 'app',
+  })
     .setProtectedHeader({ alg: 'RS256', kid: publicJwk.kid })
     .setIssuer(input.issuer ?? issuer)
     .setAudience(input.audience ?? audience)
+    .setSubject('access-user-fixture')
     .setIssuedAt()
     .setExpirationTime('5m')
     .sign(privateKey)
@@ -47,7 +51,10 @@ describe('private Access and same-origin gates', () => {
         allowLocalAndTest: false,
         localJwks: jwks,
       }),
-    ).resolves.toBeUndefined()
+    ).resolves.toMatchObject({
+      issuer,
+      subject: 'access-user-fixture',
+    })
   })
 
   it.each([

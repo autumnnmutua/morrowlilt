@@ -117,6 +117,62 @@ test('learning status is explicit and reversible on the same day', async ({
   ).toBeVisible()
 })
 
+test('per-user Resend settings keep the API key write-only', async ({
+  page,
+}) => {
+  let submittedKey = ''
+  await page.route('**/api/email/settings', async (route) => {
+    if (route.request().method() === 'GET') {
+      await route.fulfill({
+        json: {
+          data: {
+            status: 'not_configured',
+            timeZone: 'Asia/Tokyo',
+            deliveryMode: 'bring_your_own',
+            providerConfigured: false,
+            sendHourLocal: 21,
+          },
+        },
+      })
+      return
+    }
+    const body = route.request().postDataJSON() as { apiKey?: string }
+    submittedKey = body.apiKey ?? ''
+    await route.fulfill({
+      json: {
+        data: {
+          status: 'not_configured',
+          timeZone: 'Asia/Tokyo',
+          deliveryMode: 'bring_your_own',
+          providerConfigured: true,
+          sendHourLocal: 21,
+        },
+      },
+    })
+  })
+
+  await page.goto('/')
+  await page.getByRole('button', { name: '设置' }).first().click()
+  const apiKeyInput = page.getByLabel('Resend API Key')
+  await expect(apiKeyInput).toHaveAttribute('type', 'password')
+  const fixtureKey = ['re', 'browserfixture000000'].join('_')
+  await apiKeyInput.fill(fixtureKey)
+  await page
+    .getByLabel('发件地址')
+    .fill(['Study <daily', 'mail.example.invalid>'].join('@'))
+  await page.getByLabel('邮件时区').fill('Asia/Tokyo')
+  await page.getByLabel('每日发送小时').selectOption('21')
+  await page.getByRole('button', { name: '保存邮件 API' }).click()
+
+  expect(submittedKey).toBe(fixtureKey)
+  await expect(apiKeyInput).toHaveValue('')
+  await expect(
+    page.getByText(
+      '发送域验证通过，邮件 API 已加密保存，可以继续绑定接收邮箱。',
+    ),
+  ).toBeVisible()
+})
+
 test('mobile navigation, touch targets and backlog summaries remain usable', async ({
   page,
 }) => {

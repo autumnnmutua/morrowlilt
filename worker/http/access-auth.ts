@@ -1,5 +1,11 @@
-import { createLocalJWKSet, createRemoteJWKSet, jwtVerify } from 'jose'
+import {
+  createLocalJWKSet,
+  createRemoteJWKSet,
+  jwtVerify,
+  type JWTPayload,
+} from 'jose'
 import { getAccessConfig, type AccessRuntimeConfig } from '../runtime-config'
+import type { AuthenticatedIdentity } from '../repository/accounts'
 
 export class AccessAuthError extends Error {
   readonly code: string
@@ -28,7 +34,7 @@ export async function verifyAccessJwt(
   token: string,
   config: AccessRuntimeConfig,
   localJwks?: LocalJwks,
-): Promise<void> {
+): Promise<JWTPayload> {
   const keySet = localJwks
     ? createLocalJWKSet(localJwks)
     : createRemoteJWKSet(new URL(config.jwksUrl), {
@@ -36,21 +42,33 @@ export async function verifyAccessJwt(
         cooldownDuration: 60 * 1000,
         timeoutDuration: 5_000,
       })
-  await jwtVerify(token, keySet, {
+  const result = await jwtVerify(token, keySet, {
     algorithms: ['RS256'],
     audience: config.audience,
     issuer: config.issuer,
   })
+  return result.payload
 }
 
 export async function requireAccessAuthorization(
   request: Request,
   env: Env,
   options: { allowLocalAndTest?: boolean; localJwks?: LocalJwks } = {},
-): Promise<void> {
+): Promise<AuthenticatedIdentity> {
   const url = new URL(request.url)
   if (options.allowLocalAndTest !== false && isLocalOrTestHost(url.hostname)) {
-    return
+    const subject =
+      request.headers.get('x-morrowlilt-test-subject')?.trim() ||
+      'local-default'
+    const email =
+      request.headers.get('x-morrowlilt-test-email')?.trim() ||
+      ['local-user', 'example.invalid'].join('@')
+    return {
+      issuer: 'https://local.invalid',
+      subject: subject.slice(0, 512),
+      email,
+      profileHint: subject === 'local-default' ? 'default' : undefined,
+    }
   }
 
   const config = getAccessConfig(env)
@@ -70,7 +88,24 @@ export async function requireAccessAuthorization(
     )
   }
   try {
-    await verifyAccessJwt(token, config, options.localJwks)
+    const payload = await verifyAccessJwt(token, config, options.localJwks)
+    if (
+      payload.type !== 'app' ||
+      typeof payload.sub !== 'string' ||
+      payload.sub.length < 1 ||
+      payload.sub.length > 512 ||
+      typeof payload.email !== 'string' ||
+      payload.email.length < 3 ||
+      payload.email.length > 254 ||
+      typeof payload.iss !== 'string'
+    ) {
+      throw new Error('Access identity claims are incomplete')
+    }
+    return {
+      issuer: payload.iss,
+      subject: payload.sub,
+      email: payload.email,
+    }
   } catch {
     throw new AccessAuthError(
       'ACCESS_TOKEN_INVALID',

@@ -148,3 +148,19 @@ export function apiMutation<T>(
     signal,
   })
 }
+
+export function apiDelete<T>(
+  input: string,
+  schema: ZodType<T>,
+  idempotencyPrefix: string,
+  signal?: AbortSignal,
+): Promise<T> {
+  return apiRequest(input, {
+    method: 'DELETE',
+    headers: {
+      'idempotency-key': createIdempotencyKey(idempotencyPrefix),
+    },
+    schema,
+    signal,
+  })
+}

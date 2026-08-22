@@ -417,6 +417,198 @@ const seedLibrary: SeedDefinition[] = [
       'limits of adaptation',
     ],
   },
+  {
+    theme: 'work',
+    english:
+      'Teams make better decisions when people can voice candid concerns tentatively, allowing colleagues to de-escalate disagreement before it becomes personal.',
+    chinese:
+      '当成员能够坦率而审慎地表达顾虑时，团队往往能作出更好的决定，也能在分歧变成人身冲突前缓和局面。',
+    grammarNotes: [
+      'when 引导条件性的时间从句；before 引导界定冲突升级节点的时间从句。',
+    ],
+    usageNotes: [
+      'voice a concern 比直接说 complain 更中性，适合会议、复盘和协作沟通。',
+    ],
+    collocations: [
+      ['voice candid concerns', '坦率地提出顾虑'],
+      ['de-escalate disagreement', '缓和分歧或冲突'],
+    ],
+    alternatives: [
+      ['raise a concern constructively', '以建设性的方式提出问题。'],
+      ['keep the discussion impersonal', '让讨论聚焦问题而非个人。'],
+    ],
+    microExercise:
+      'Turn a blunt objection into a tentative workplace response and add one constructive next step.',
+    vocabulary: [
+      [
+        'word',
+        'candid',
+        'honest and direct without deliberately hiding an opinion',
+        'Her candid feedback exposed a risk that the team had overlooked.',
+      ],
+      [
+        'word',
+        'tentatively',
+        'in a careful way that shows an idea is not yet certain',
+        'He tentatively suggested delaying the launch by one week.',
+      ],
+      [
+        'word',
+        'de-escalate',
+        'to reduce the intensity of a conflict or dangerous situation',
+        'A short pause helped de-escalate the argument before the meeting resumed.',
+      ],
+    ],
+    topicKind: 'writing',
+    topicPrompt:
+      'Evaluate how teams can encourage honest disagreement without damaging trust or slowing every decision.',
+    preparationPoints: [
+      'psychological safety',
+      'decision speed',
+      'constructive language',
+    ],
+  },
+  {
+    theme: 'health',
+    english:
+      'Restorative sleep depends less on a perfect bedtime than on consistent routines that help the mind wind down and prevent fatigue from impairing judgement.',
+    chinese:
+      '恢复精力的睡眠与其说取决于完美的入睡时间，不如说依赖稳定的作息，让大脑逐渐放松并避免疲劳损害判断力。',
+    grammarNotes: [
+      'less on A than on B 表示“与其取决于 A，不如取决于 B”；that 引导定语从句。',
+    ],
+    usageNotes: [
+      'wind down 常指活动或情绪逐渐放缓，语气比 force yourself to sleep 自然。',
+    ],
+    collocations: [
+      ['restorative sleep', '有助于恢复身心的睡眠'],
+      ['impair judgement', '损害判断力'],
+    ],
+    alternatives: [
+      ['establish a consistent routine', '建立稳定的作息流程。'],
+      ['allow the mind to settle', '让思绪逐渐平静。'],
+    ],
+    microExercise:
+      'Describe a realistic evening routine using “less ... than ...” and explain how it supports concentration.',
+    vocabulary: [
+      [
+        'word',
+        'restorative',
+        'capable of restoring health, strength, or mental energy',
+        'A restorative break can improve attention during a long study session.',
+      ],
+      [
+        'word',
+        'impair',
+        'to weaken or damage the quality of an ability or function',
+        'Chronic sleep loss can impair memory and emotional control.',
+      ],
+      [
+        'phrase',
+        'wind down',
+        'to gradually become calmer or less active',
+        'She switches off notifications to wind down before bed.',
+      ],
+    ],
+    topicKind: 'writing',
+    topicPrompt:
+      'Explain why sustainable health routines may be more effective than highly ambitious short-term plans.',
+    preparationPoints: ['consistency', 'environmental cues', 'realistic goals'],
+  },
+  {
+    theme: 'technology',
+    english:
+      'Recommendation systems may curate convenient choices, yet their opaque logic can narrow attention unless users retain enough agency to question what appears on screen.',
+    chinese:
+      '推荐系统可以筛选出便捷的选择，但其不透明的逻辑也可能收窄注意范围，除非用户保有足够的自主性去质疑屏幕上的内容。',
+    grammarNotes: [
+      'yet 连接转折关系；unless 引导否定条件，表示若不满足条件就会出现前述结果。',
+    ],
+    usageNotes: [
+      'curate 在数字产品语境中表示有选择地组织内容，不只是博物馆的“策展”。',
+    ],
+    collocations: [
+      ['curate recommendations', '筛选并组织推荐内容'],
+      ['retain agency', '保有自主选择能力'],
+    ],
+    alternatives: [
+      ['make the logic more transparent', '让推荐逻辑更加透明。'],
+      ['exercise independent judgement', '运用独立判断。'],
+    ],
+    microExercise:
+      'Give one benefit and one risk of personalised feeds, then propose a feature that protects user agency.',
+    vocabulary: [
+      [
+        'word',
+        'curate',
+        'to select and organise material for a particular audience or purpose',
+        'The platform curates short lessons according to each learner’s recent mistakes.',
+      ],
+      [
+        'word',
+        'opaque',
+        'difficult to understand or explain because information is hidden',
+        'An opaque ranking system makes it hard for creators to improve their work.',
+      ],
+      [
+        'word',
+        'agency',
+        'the capacity to make independent choices and act on them',
+        'Clear controls give users more agency over the information they receive.',
+      ],
+    ],
+    topicKind: 'writing',
+    topicPrompt:
+      'Discuss how personalised technology can remain useful without weakening independent choice or exposure to diverse ideas.',
+    preparationPoints: ['convenience', 'transparency', 'user controls'],
+  },
+  {
+    theme: 'city',
+    english:
+      'Accessible third places such as libraries and neighbourhood cafés foster convivial contact, giving residents a sense of belonging without requiring a formal invitation.',
+    chinese:
+      '图书馆和社区咖啡馆等便利可达的第三空间能够促进轻松友善的交往，让居民无需正式邀请也能产生归属感。',
+    grammarNotes: [
+      'such as 引出例子；现在分词短语 giving... 补充说明前句产生的结果。',
+    ],
+    usageNotes: [
+      'third place 指家庭和工作场所以外、可供日常社交的公共或半公共空间。',
+    ],
+    collocations: [
+      ['foster social contact', '促进社会交往'],
+      ['a sense of belonging', '归属感'],
+    ],
+    alternatives: [
+      ['welcoming shared spaces', '友好开放的共享空间。'],
+      ['informal community ties', '非正式的社区联系。'],
+    ],
+    microExercise:
+      'Describe a useful third place in your area and explain how its design encourages informal interaction.',
+    vocabulary: [
+      [
+        'word',
+        'accessible',
+        'easy to reach, use, understand, or afford',
+        'An accessible venue should work for people with different mobility needs.',
+      ],
+      [
+        'word',
+        'foster',
+        'to encourage the development of a quality, relationship, or activity',
+        'Regular community events foster trust between new and long-term residents.',
+      ],
+      [
+        'word',
+        'convivial',
+        'friendly, lively, and enjoyable in a social setting',
+        'The shared courtyard creates a convivial atmosphere on summer evenings.',
+      ],
+    ],
+    topicKind: 'writing',
+    topicPrompt:
+      'Assess whether cities should invest more in informal shared spaces as part of essential social infrastructure.',
+    preparationPoints: ['accessibility', 'social connection', 'public cost'],
+  },
 ]
 
 const chineseDefinitions: Record<string, string> = {
@@ -444,6 +636,18 @@ const chineseDefinitions: Record<string, string> = {
   reinterpret: '重新解释或理解',
   immune: '不受影响的；具有免疫力的',
   'living tradition': '在现实社群中持续发展变化的传统',
+  candid: '坦率的；诚实直接但不刻意冒犯的',
+  tentatively: '试探性地；谨慎而尚未完全确定地',
+  'de-escalate': '缓和；降低冲突或危险局势的强度',
+  restorative: '恢复精力或健康的；有修复作用的',
+  impair: '损害；削弱能力、功能或质量',
+  'wind down': '逐渐放松；逐步减少活动',
+  curate: '精选并组织内容；策划',
+  opaque: '不透明的；难以理解或解释的',
+  agency: '自主行动与独立选择的能力',
+  accessible: '便利可达的；易于使用或理解的',
+  foster: '促进；培养某种品质、关系或活动',
+  convivial: '欢乐友好的；适合轻松社交的',
 }
 
 const chineseExamples: Record<string, string> = {
@@ -471,6 +675,18 @@ const chineseExamples: Record<string, string> = {
   reinterpret: '年轻艺术家通过数字媒体重新诠释本地故事。',
   immune: '任何文化实践都不可能完全不受迁徙与技术影响。',
   'living tradition': '活态传统会在保留可辨识核心的同时不断变化。',
+  candid: '她坦率的反馈揭示了团队此前忽略的风险。',
+  tentatively: '他试探性地建议把发布日期推迟一周。',
+  'de-escalate': '短暂休息让争论缓和下来，会议随后继续。',
+  restorative: '有恢复作用的休息能够改善长时间学习时的注意力。',
+  impair: '长期睡眠不足会损害记忆和情绪控制。',
+  'wind down': '她会关闭通知，让自己在睡前逐渐放松。',
+  curate: '平台会根据学习者近期的错题筛选短课程。',
+  opaque: '不透明的排序系统让创作者难以改进作品。',
+  agency: '清晰的控制选项让用户对接收的信息拥有更多自主权。',
+  accessible: '便利可用的场所应满足不同出行能力人群的需要。',
+  foster: '定期社区活动能够培养新老居民之间的信任。',
+  convivial: '共享庭院在夏日傍晚营造出欢乐友好的氛围。',
 }
 
 const wordPartsOfSpeech: Record<string, string> = {
@@ -490,6 +706,17 @@ const wordPartsOfSpeech: Record<string, string> = {
   density: '名词 noun',
   reinterpret: '动词 verb',
   immune: '形容词 adjective',
+  candid: '形容词 adjective',
+  tentatively: '副词 adverb',
+  'de-escalate': '动词 verb',
+  restorative: '形容词 adjective',
+  impair: '动词 verb',
+  curate: '动词 verb',
+  opaque: '形容词 adjective',
+  agency: '名词 noun',
+  accessible: '形容词 adjective',
+  foster: '动词 verb',
+  convivial: '形容词 adjective',
 }
 
 function partOfSpeechFor(
@@ -505,6 +732,7 @@ export const seedThemeCoverage = seedLibrary.map((seed) => seed.theme)
 
 export function createSeedCandidates(
   contentDate: string,
+  expressionOffset = 0,
 ): DailyContentCandidate[] {
   return seedLibrary.map((seed, seedIndex) => ({
     payload: {
@@ -542,7 +770,9 @@ export function createSeedCandidates(
             ? '结合搭配和例句记忆，不要只背单一中文对译。'
             : '把整个词块作为一个单位记忆，并注意适用语域。',
       })),
-      practicalExpressions: practicalExpressionGroup(seedIndex),
+      practicalExpressions: practicalExpressionGroup(
+        seedIndex + expressionOffset,
+      ),
       topic: {
         kind: 'writing',
         prompt: seed.topicPrompt,

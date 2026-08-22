@@ -3,6 +3,7 @@ export type EmailDeliveryStatus = 'pending' | 'sending' | 'sent' | 'failed'
 
 export type EmailDelivery = {
   id: string
+  profileId: string
   contentDate: string
   recipientHash: string
   deliveryKey: string
@@ -23,6 +24,7 @@ export type EmailDelivery = {
 
 type EmailDeliveryRow = {
   id: string
+  profile_id: string
   content_date: string
   recipient_hash: string
   delivery_key: string
@@ -52,6 +54,7 @@ const idempotencyMilliseconds = 24 * 60 * 60 * 1000
 function toDelivery(row: EmailDeliveryRow): EmailDelivery {
   return {
     id: row.id,
+    profileId: row.profile_id,
     contentDate: row.content_date,
     recipientHash: row.recipient_hash,
     deliveryKey: row.delivery_key,
@@ -105,6 +108,7 @@ export async function getEmailDelivery(
 
 export async function claimEmailDelivery(input: {
   db: D1Database
+  profileId: string
   contentDate: string
   recipientHash: string
   deliveryKey: string
@@ -117,13 +121,14 @@ export async function claimEmailDelivery(input: {
   await input.db
     .prepare(
       `INSERT INTO email_deliveries (
-         id, content_date, recipient_hash, delivery_key, delivery_type,
+         id, profile_id, content_date, recipient_hash, delivery_key, delivery_type,
          status, provider, created_at, updated_at
-       ) VALUES (?, ?, ?, ?, ?, 'pending', ?, ?, ?)
+       ) VALUES (?, ?, ?, ?, ?, ?, 'pending', ?, ?, ?)
        ON CONFLICT(delivery_key) DO NOTHING`,
     )
     .bind(
       crypto.randomUUID(),
+      input.profileId,
       input.contentDate,
       input.recipientHash,
       input.deliveryKey,

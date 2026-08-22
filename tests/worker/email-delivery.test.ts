@@ -12,6 +12,7 @@ import {
   hashEmailRecipient,
 } from '../../worker/repository/email-delivery'
 import { ensureDailyContent } from '../../worker/services/daily-content'
+import { ensureAppProfile } from '../../worker/services/learning'
 import {
   deliverDailyEmail,
   runScheduledDailyJob,
@@ -34,6 +35,12 @@ class RecordingEmailProvider implements EmailProvider {
 }
 
 async function content(contentDate: string) {
+  await ensureAppProfile({
+    db: env.DB,
+    profileId: 'default',
+    timeZone: 'Asia/Shanghai',
+    now: new Date(`${contentDate}T04:00:00.000Z`),
+  })
   return ensureDailyContent({
     db: env.DB,
     contentDate,

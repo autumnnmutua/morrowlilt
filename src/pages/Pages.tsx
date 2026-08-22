@@ -1,6 +1,10 @@
 import { useEffect, useId, useState } from 'react'
-import { apiGet, apiMutation } from '../lib/api'
-import { emailSettingsSchema, settingsSchema } from '../lib/schemas'
+import { apiDelete, apiGet, apiMutation } from '../lib/api'
+import {
+  accountStatusSchema,
+  emailSettingsSchema,
+  settingsSchema,
+} from '../lib/schemas'
 import type {
   DailyContent,
   PageId,
@@ -1112,6 +1116,17 @@ export function SettingsPage({
   >('not_configured')
   const [maskedEmail, setMaskedEmail] = useState('')
   const [emailMessage, setEmailMessage] = useState('正在读取邮件设置…')
+  const [deliveryMode, setDeliveryMode] = useState<
+    'platform' | 'bring_your_own'
+  >('platform')
+  const [providerConfigured, setProviderConfigured] = useState(false)
+  const [providerApiKey, setProviderApiKey] = useState('')
+  const [mailFrom, setMailFrom] = useState('')
+  const [sendHourLocal, setSendHourLocal] = useState(23)
+  const [accountDisabled, setAccountDisabled] = useState(false)
+  const [accountMessage, setAccountMessage] = useState(
+    '停用账号会暂停访问和邮件，但保留历史学习数据。',
+  )
 
   useEffect(() => {
     const controller = new AbortController()
@@ -1148,6 +1163,10 @@ export function SettingsPage({
       .then((data) => {
         setEmailStatus(data.status)
         setMaskedEmail(data.maskedEmail ?? '')
+        setDeliveryMode(data.deliveryMode ?? 'platform')
+        setProviderConfigured(data.providerConfigured ?? false)
+        setSendHourLocal(data.sendHourLocal ?? 23)
+        setTimeZone(data.timeZone)
         setEmailMessage(
           verificationToken && data.status === 'verified'
             ? '邮箱已确认，每日邮件将在设定时间发送。'
@@ -1226,6 +1245,71 @@ export function SettingsPage({
     }
   }
 
+  const configureEmailProvider = async () => {
+    setEmailMessage('正在核验发送域并加密保存邮件服务设置…')
+    try {
+      const data = await apiMutation(
+        '/api/email/settings',
+        emailSettingsSchema,
+        {
+          action: 'configure_provider',
+          apiKey: providerApiKey,
+          mailFrom,
+          timeZone,
+          sendHourLocal,
+        },
+        'email-provider-config',
+      )
+      setProviderConfigured(data.providerConfigured ?? true)
+      setSendHourLocal(data.sendHourLocal ?? sendHourLocal)
+      setProviderApiKey('')
+      setEmailMessage(
+        '发送域验证通过，邮件 API 已加密保存，可以继续绑定接收邮箱。',
+      )
+    } catch (error) {
+      setEmailMessage(
+        error instanceof Error ? error.message : '邮件 API 保存失败',
+      )
+    }
+  }
+
+  const changeAccountStatus = async (action: 'disable' | 'reauthorize') => {
+    if (
+      action === 'disable' &&
+      !window.confirm('确认停用当前账号？历史学习数据会保留，邮件将停止。')
+    ) {
+      return
+    }
+    setAccountMessage(
+      action === 'disable' ? '正在停用账号…' : '正在重新授权账号…',
+    )
+    try {
+      const data =
+        action === 'disable'
+          ? await apiDelete(
+              '/api/account',
+              accountStatusSchema,
+              'account-disable',
+            )
+          : await apiMutation(
+              '/api/account/reauthorize',
+              accountStatusSchema,
+              {},
+              'account-reauthorize',
+            )
+      setAccountDisabled(data.status === 'disabled')
+      setAccountMessage(
+        data.status === 'disabled'
+          ? '账号已停用，历史进度仍保留。可在本页重新授权。'
+          : '账号已重新授权，原有学习进度已恢复。',
+      )
+    } catch (error) {
+      setAccountMessage(
+        error instanceof Error ? error.message : '账号状态更新失败',
+      )
+    }
+  }
+
   return (
     <div className="page page--reading">
       <PageHeading
@@ -1257,7 +1341,26 @@ export function SettingsPage({
             {timeZone || '正在读取…'}
           </p>
           <p className="field-note">
-            业务时区由私人部署配置统一管理，避免不同设备跨日不一致。
+            业务时区同时决定每日内容日期与邮件发送时间。
+          </p>
+        </fieldset>
+
+        <fieldset>
+          <legend>账号与数据</legend>
+          <p>学习进度、测试、错题、收藏和邮箱设置只属于当前登录账号。</p>
+          <button
+            className="button button--secondary"
+            onClick={() =>
+              void changeAccountStatus(
+                accountDisabled ? 'reauthorize' : 'disable',
+              )
+            }
+            type="button"
+          >
+            {accountDisabled ? '重新授权账号' : '停用当前账号'}
+          </button>
+          <p aria-live="polite" className="field-note" role="status">
+            {accountMessage}
           </p>
         </fieldset>
 
@@ -1271,7 +1374,79 @@ export function SettingsPage({
 
         <fieldset>
           <legend>每日邮件</legend>
-          <p>每天北京时间 23:00 发送与网站当天内容一致的学习包。</p>
+          <p>
+            每个账号单独保存邮箱、时区和发送小时，邮件内容与该账号当天网页一致。
+          </p>
+          {deliveryMode === 'bring_your_own' ? (
+            <div className="settings-form">
+              <p className="field-note">
+                请提供自己的 Resend API Key 和已验证域名下的发件地址。API
+                会加密保存，保存后不会再次显示。
+              </p>
+              <label htmlFor="resend-api-key">Resend API Key</label>
+              <input
+                autoComplete="off"
+                id="resend-api-key"
+                maxLength={220}
+                onChange={(event) => setProviderApiKey(event.target.value)}
+                placeholder={
+                  providerConfigured ? '已配置；输入新值可替换' : 're_…'
+                }
+                type="password"
+                value={providerApiKey}
+              />
+              <label htmlFor="mail-from">发件地址</label>
+              <input
+                id="mail-from"
+                maxLength={320}
+                onChange={(event) => setMailFrom(event.target.value)}
+                placeholder={[
+                  'Daily English <daily',
+                  'send.example.invalid>',
+                ].join('@')}
+                type="text"
+                value={mailFrom}
+              />
+              <label htmlFor="mail-time-zone">邮件时区</label>
+              <input
+                id="mail-time-zone"
+                maxLength={64}
+                onChange={(event) => setTimeZone(event.target.value)}
+                placeholder="Asia/Shanghai"
+                type="text"
+                value={timeZone}
+              />
+              <label htmlFor="mail-send-hour">每日发送小时</label>
+              <select
+                id="mail-send-hour"
+                onChange={(event) =>
+                  setSendHourLocal(Number(event.target.value))
+                }
+                value={sendHourLocal}
+              >
+                {Array.from({ length: 24 }, (_, hour) => (
+                  <option key={hour} value={hour}>
+                    {String(hour).padStart(2, '0')}:00
+                  </option>
+                ))}
+              </select>
+              <button
+                className="button button--secondary"
+                disabled={
+                  !providerApiKey.trim() || !mailFrom.trim() || !timeZone.trim()
+                }
+                onClick={() => void configureEmailProvider()}
+                type="button"
+              >
+                {providerConfigured ? '更新邮件 API' : '保存邮件 API'}
+              </button>
+            </div>
+          ) : (
+            <p className="field-note">
+              此账号使用站点邮件服务，每天{' '}
+              {String(sendHourLocal).padStart(2, '0')}:00 发送。
+            </p>
+          )}
           {maskedEmail ? (
             <p>
               <strong>当前邮箱：</strong>
@@ -1293,7 +1468,10 @@ export function SettingsPage({
               />
               <button
                 className="button button--primary"
-                disabled={!email.trim()}
+                disabled={
+                  !email.trim() ||
+                  (deliveryMode === 'bring_your_own' && !providerConfigured)
+                }
                 onClick={() => void changeEmailSetting('bind')}
                 type="button"
               >

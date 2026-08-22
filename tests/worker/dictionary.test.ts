@@ -7,7 +7,10 @@ import type {
   DictionaryTranslationProvider,
 } from '../../worker/providers/contracts'
 import { FreeDictionaryProvider } from '../../worker/providers/free-dictionary'
-import { buildInflections } from '../../worker/dictionary/morphology'
+import {
+  buildInflections,
+  irregularVerbCount,
+} from '../../worker/dictionary/morphology'
 import { getDictionaryCache } from '../../worker/repository/dictionary'
 import {
   addDictionaryTerm,
@@ -152,6 +155,9 @@ afterEach(() => {
 })
 
 describe('Free Dictionary Provider', () => {
+  it('ships the expanded irregular verb morphology bank', () => {
+    expect(irregularVerbCount).toBe(84)
+  })
   it('URL-encodes normalized phrases and preserves every entry, POS, sense, and source', async () => {
     let requestedUrl = ''
     vi.stubGlobal(

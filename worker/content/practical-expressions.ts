@@ -18,6 +18,32 @@ type CompactExpression = {
   ieltsUse: string
 }
 
+function conciseExpression(
+  expression: string,
+  expressionType: CompactExpression['expressionType'],
+  partOfSpeech: string,
+  chineseMeanings: string[],
+  coreMeaning: string,
+  first: CompactExpression['first'],
+  second: CompactExpression['second'],
+  pitfall: string,
+  alternative: [string, string],
+): CompactExpression {
+  return {
+    expression,
+    expressionType,
+    partOfSpeech,
+    chineseMeanings,
+    coreMeaning,
+    usageNotes: ['适合熟人交流与自然对话；正式场合需根据语气换用中性表达。'],
+    first,
+    second,
+    pitfalls: [pitfall],
+    alternatives: [alternative],
+    ieltsUse: '可提升语用理解和自然回应能力；正式写作中应换用对应的中性表达。',
+  }
+}
+
 const library: CompactExpression[][] = [
   [
     {
@@ -680,6 +706,269 @@ const library: CompactExpression[][] = [
       ieltsUse: '可用于概率与风险表达；写作可用 it is unlikely that。',
     },
   ],
+  [
+    conciseExpression(
+      "I'm down for that.",
+      'slang',
+      '非正式回应语',
+      ['我可以', '我愿意参加', '这个主意我赞成'],
+      'down 在此不是“向下”，而是表示愿意参与某个计划或接受某个提议。',
+      [
+        '朋友邀约',
+        '朋友提议周末联机。',
+        "A co-op game tonight? I'm down for that.",
+        '今晚玩合作游戏？我可以。',
+      ],
+      [
+        '临时计划',
+        '同事提议换一家店吃饭。',
+        "Trying the new café? I'm down for that.",
+        '去试试新咖啡馆？我赞成。',
+      ],
+      '不要在正式邮件中用它表示批准，也不要误解为情绪低落。',
+      ['I would be happy to join.', '更完整、礼貌，适合半正式邀请。'],
+    ),
+    conciseExpression(
+      'You do you.',
+      'slang',
+      '非正式回应语',
+      ['按你喜欢的来', '你开心就好', '做你自己'],
+      '表示尊重对方的个人选择；语调友好时是支持，冷淡时也可能带轻微讽刺。',
+      [
+        '风格选择',
+        '朋友担心穿搭太特别。',
+        'If you like the jacket, wear it. You do you.',
+        '喜欢这件夹克就穿吧，按你喜欢的来。',
+      ],
+      [
+        '游戏路线',
+        '队友想尝试不同打法。',
+        'I prefer stealth, but you do you.',
+        '我更喜欢潜行，不过你按自己的打法来。',
+      ],
+      '避免对严肃困境随口使用，否则可能显得敷衍。',
+      ['Choose what suits you best.', '更中性，也更适合提供建议。'],
+    ),
+    conciseExpression(
+      'No hard feelings.',
+      'idiom',
+      '固定回应语',
+      ['别往心里去', '没有芥蒂', '咱们还是没事'],
+      '用于冲突、拒绝或竞争之后确认彼此没有怨气，重点是修复关系。',
+      [
+        '比赛结束',
+        '朋友在对局中赢得很彻底。',
+        'You crushed us, but no hard feelings.',
+        '你们把我们打惨了，不过别担心，我们没芥蒂。',
+      ],
+      [
+        '拒绝邀请',
+        '无法参加朋友组织的活动。',
+        'I cannot make it tonight—no hard feelings?',
+        '我今晚来不了，你不会介意吧？',
+      ],
+      '它不能代替真正需要承担责任的道歉。',
+      ['I hope there is no misunderstanding.', '更正式，适合澄清关系。'],
+    ),
+  ],
+  [
+    conciseExpression(
+      'That checks out.',
+      'slang',
+      '非正式判断句',
+      ['这说得通', '情况对得上', '逻辑没问题'],
+      'check out 表示信息经过核对后合理或与证据一致。',
+      [
+        '核对时间',
+        '朋友解释自己为什么迟到。',
+        'The last train was delayed? That checks out.',
+        '末班车晚点了？那就说得通了。',
+      ],
+      [
+        '游戏机制',
+        '数据与测试结果一致。',
+        'The bonus only works at night. That checks out.',
+        '加成只在夜间生效，数据对得上。',
+      ],
+      '不要与 check someone out 的“打量某人”混淆。',
+      ['That explanation is consistent with the evidence.', '适合正式分析。'],
+    ),
+    conciseExpression(
+      "Let's call it a day.",
+      'idiom',
+      '建议句；习语',
+      ['今天就到这里吧', '收工吧', '先告一段落'],
+      '表示当天的工作或活动已经足够，可以合理结束，而不是给某事命名。',
+      [
+        '学习结束',
+        '复习时间已经很长。',
+        "We've covered three chapters. Let's call it a day.",
+        '我们已经复习三章了，今天就到这里吧。',
+      ],
+      [
+        '游戏收尾',
+        '大家状态开始下降。',
+        "One last match, then let's call it a day.",
+        '最后一局，然后就收工吧。',
+      ],
+      '不适合用来宣布项目永久取消，只表示暂时结束。',
+      ['Let us stop here for today.', '意思直接，语气更中性。'],
+    ),
+    conciseExpression(
+      "I'm on the fence.",
+      'idiom',
+      '状态表达；习语',
+      ['我还没决定', '我有点犹豫', '我暂时不站边'],
+      '想象坐在分界栅栏上，表示两边都有理由，暂时无法作出选择。',
+      [
+        '购买选择',
+        '两个版本各有优点。',
+        "Both editions look useful, so I'm still on the fence.",
+        '两个版本看起来都实用，我还在犹豫。',
+      ],
+      [
+        '观点讨论',
+        '争议双方都有合理依据。',
+        "I can see both sides; I'm on the fence.",
+        '两边的理由我都理解，所以暂时不站边。',
+      ],
+      '它表示尚未决定，不等于完全没有意见。',
+      ['I remain undecided.', '简洁正式，适合调查或讨论。'],
+    ),
+  ],
+  [
+    conciseExpression(
+      'It slipped my mind.',
+      'idiom',
+      '说明句；习语',
+      ['我一时忘了', '这事从我脑子里溜走了', '我给忘记了'],
+      '用“从脑海滑走”的画面解释无意忘记，语气比 I forgot 更柔和。',
+      [
+        '忘记回复',
+        '看到消息后被别的事打断。',
+        'I meant to reply, but it slipped my mind.',
+        '我本来想回复，但一忙就忘了。',
+      ],
+      [
+        '遗漏任务',
+        '约定的小事没有完成。',
+        'Sorry, buying batteries completely slipped my mind.',
+        '抱歉，我把买电池这事完全忘了。',
+      ],
+      '重复用它解释重要失误会显得推卸责任，应同时给出补救。',
+      ['I inadvertently forgot.', '更正式，但日常使用略显书面。'],
+    ),
+    conciseExpression(
+      'Give me a heads-up.',
+      'idiom',
+      '祈使句；非正式请求',
+      ['提前告诉我一声', '先提醒我', '有变化通知我'],
+      'heads-up 是提前预警或提醒，让对方有时间准备。',
+      [
+        '计划变化',
+        '朋友可能会晚到。',
+        'Give me a heads-up if the time changes.',
+        '时间有变化就提前告诉我一声。',
+      ],
+      [
+        '游戏组队',
+        '队友准备突然开团。',
+        'Give me a heads-up before you push.',
+        '你推进之前先提醒我一下。',
+      ],
+      '它不表示详细汇报，只要求简短的提前通知。',
+      ['Please let me know in advance.', '礼貌且适合正式安排。'],
+    ),
+    conciseExpression(
+      "We're on the same page.",
+      'idiom',
+      '状态表达；习语',
+      ['我们理解一致', '咱们想法对上了', '我们有共识'],
+      '来自共同阅读同一页的画面，强调对目标、规则或下一步理解一致。',
+      [
+        '确认计划',
+        '开始任务前核对分工。',
+        "Let's make sure we're on the same page about the deadline.",
+        '确认一下我们对截止时间的理解一致。',
+      ],
+      [
+        '讨论战术',
+        '队友的方案与你一致。',
+        "Good, we're on the same page about defending first.",
+        '很好，我们都同意先防守。',
+      ],
+      '观点一致不代表所有细节都已确定，必要时继续核对。',
+      ['We have a shared understanding.', '更正式，适合会议纪要。'],
+    ),
+  ],
+  [
+    conciseExpression(
+      'That rings a bell.',
+      'idiom',
+      '记忆回应；习语',
+      ['听起来耳熟', '我好像记得', '这让我有点印象'],
+      '表示信息触发了模糊记忆，但还不能确认完整细节。',
+      [
+        '提到名字',
+        '朋友说出一位旧同学的名字。',
+        'Maya Chen? That name rings a bell.',
+        'Maya Chen？这个名字听起来有点耳熟。',
+      ],
+      [
+        '游戏线索',
+        '地点名称似乎曾经出现。',
+        'The Old Harbor? That rings a bell.',
+        '旧港口？这地方我好像有印象。',
+      ],
+      '它只表示模糊熟悉，不能用来声称自己确定知道。',
+      ['That sounds familiar.', '意思直接，适用范围更广。'],
+    ),
+    conciseExpression(
+      "Let's not jump to conclusions.",
+      'phrase',
+      '建议句；固定搭配',
+      ['先别急着下结论', '别过早判断', '我们再看看证据'],
+      'jump 强调从有限信息直接跳到最终判断，常用于缓和争论。',
+      [
+        '消息讨论',
+        '只有一张未经证实的截图。',
+        "We only have one screenshot; let's not jump to conclusions.",
+        '我们只有一张截图，先别急着下结论。',
+      ],
+      [
+        '排查故障',
+        '问题原因尚未确认。',
+        "The server is slow, but let's not jump to conclusions.",
+        '服务器是慢了，不过先别急着判断原因。',
+      ],
+      '不要借此无限拖延；补充说明下一步需要什么证据。',
+      [
+        'Further evidence is needed before drawing a conclusion.',
+        '适合正式论证。',
+      ],
+    ),
+    conciseExpression(
+      'I can work with that.',
+      'response',
+      '回应语；能力表达',
+      ['这个条件我能接受', '这样可以操作', '我能在这个基础上继续'],
+      '表示方案虽然未必完美，但已经足够可行，可以继续推进。',
+      [
+        '调整时间',
+        '朋友只能晚半小时上线。',
+        'You can join at nine? I can work with that.',
+        '你九点能来？这个时间我能配合。',
+      ],
+      [
+        '修改方案',
+        '资源减少但仍能完成。',
+        'Three examples instead of five? I can work with that.',
+        '五个例子改成三个？这样也能做。',
+      ],
+      '它不是字面上的“和某物一起工作”，而是接受约束后的可行判断。',
+      ['That arrangement is workable.', '更正式，适合项目沟通。'],
+    ),
+  ],
 ]
 
 function expand(item: CompactExpression): PracticalExpression {
@@ -713,3 +1002,7 @@ export function practicalExpressionGroup(index: number): PracticalExpression[] {
 }
 
 export const practicalExpressionSeedCount = library.length
+export const practicalExpressionCount = library.reduce(
+  (total, group) => total + group.length,
+  0,
+)

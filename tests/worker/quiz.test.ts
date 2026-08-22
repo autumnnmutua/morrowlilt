@@ -72,6 +72,9 @@ async function answerSession(
 }
 
 describe('quiz generator and scoring', () => {
+  it('keeps the expanded built-in question bank available', () => {
+    expect(questionBank).toHaveLength(30)
+  })
   it('keeps practice assessment focused on vocabulary and phrases without writing questions', () => {
     expect(new Set(questionBank.map((question) => question.type))).toEqual(
       new Set(types),

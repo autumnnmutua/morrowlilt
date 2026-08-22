@@ -1,6 +1,7 @@
 import { env, exports } from 'cloudflare:workers'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { computeContentFingerprint } from '../../worker/content/fingerprint'
+import { practicalExpressionCount } from '../../worker/content/practical-expressions'
 import {
   ContentValidationError,
   isDailyContentCandidate,
@@ -155,7 +156,8 @@ describe('daily-content schema and seeds', () => {
       ]),
     )
     const candidates = createSeedCandidates('2026-09-01')
-    expect(candidates).toHaveLength(8)
+    expect(candidates).toHaveLength(12)
+    expect(practicalExpressionCount).toBe(36)
     for (const candidate of candidates) {
       expect(isDailyContentCandidate(candidate)).toBe(true)
       expect(candidate.payload).toMatchObject({

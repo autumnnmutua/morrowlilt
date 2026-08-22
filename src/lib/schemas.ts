@@ -294,10 +294,17 @@ export const settingsSchema = z.object({
   timeZone: nonEmpty.optional(),
 })
 
+export const accountStatusSchema = z.object({
+  status: z.enum(['active', 'disabled']),
+})
+
 export const emailSettingsSchema = z.object({
   status: z.enum(['not_configured', 'pending', 'verified', 'unsubscribed']),
   maskedEmail: nonEmpty.optional(),
   timeZone: nonEmpty,
+  deliveryMode: z.enum(['platform', 'bring_your_own']).optional(),
+  providerConfigured: z.boolean().optional(),
+  sendHourLocal: z.number().int().min(0).max(23).optional(),
   testOutcome: z
     .enum(['sent', 'already_sent', 'busy', 'retry_exhausted'])
     .optional(),

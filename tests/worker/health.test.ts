@@ -41,7 +41,8 @@ describe('Worker API and D1 integration', () => {
     expect(secondBody.data.id).toBe(firstBody.data.id)
 
     const stored = await env.DB.prepare(
-      'SELECT content_date, source FROM daily_content WHERE content_date = ?',
+      `SELECT content_date, source FROM profile_daily_content
+       WHERE profile_id = 'default' AND content_date = ?`,
     )
       .bind('2026-08-20')
       .first<{ content_date: string; source: string }>()
@@ -79,7 +80,8 @@ describe('Worker API and D1 integration', () => {
 
     const businessDate = '2026-08-22'
     const stored = await env.DB.prepare(
-      'SELECT content_date FROM daily_content WHERE content_date = ?',
+      `SELECT content_date FROM profile_daily_content
+       WHERE profile_id = 'default' AND content_date = ?`,
     )
       .bind(businessDate)
       .first<{ content_date: string }>()

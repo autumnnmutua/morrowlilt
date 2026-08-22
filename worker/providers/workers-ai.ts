@@ -6,7 +6,7 @@ import type {
   DictionaryTranslationProvider,
 } from './contracts'
 
-const model = '@cf/meta/llama-3.1-8b-instruct-fast' as const
+const model = '@cf/meta/llama-3.1-8b-instruct-fp8' as const
 const translationModel = '@cf/meta/m2m100-1.2b' as const
 
 function parseResponse(output: unknown): unknown {
@@ -50,6 +50,21 @@ function requestSignal(
   return external ? AbortSignal.any([external, timeout]) : timeout
 }
 
+async function variationSeed(input: string): Promise<{
+  nonce: string
+  seed: number
+}> {
+  const digest = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input)),
+  )
+  const nonce = [...digest.slice(0, 8)]
+    .map((byte) => byte.toString(16).padStart(2, '0'))
+    .join('')
+  const seed =
+    (new DataView(digest.buffer).getUint32(8, false) % 2_147_483_646) + 1
+  return { nonce, seed }
+}
+
 export class WorkersAiContentProvider implements ContentProvider {
   readonly name = 'cloudflare-workers-ai'
   private readonly ai: Ai
@@ -68,6 +83,9 @@ export class WorkersAiContentProvider implements ContentProvider {
     signal?: AbortSignal,
   ): Promise<DailyContentCandidate> {
     const recent = JSON.stringify(context.recentSummaries ?? [])
+    const variation = await variationSeed(
+      `${contentDate}\u0000${context.variationKey ?? 'default'}\u0000${context.attempt}`,
+    )
     const output = await this.ai.run(
       model,
       {
@@ -79,11 +97,12 @@ export class WorkersAiContentProvider implements ContentProvider {
           },
           {
             role: 'user',
-            content: `Create one unique daily package for ${contentDate} in ${timeZone}. Avoid every sentence, vocabulary term and practical expression in this recent 30-day material: ${recent}. Include exactly 3 useful vocabulary items and exactly 3 idiomatic practical expressions. Every vocabulary item must have a precise part of speech, natural Chinese meaning, English example, Chinese example translation and usage note. Practical expressions must feel current but not ephemeral, and cover real friend chat, offline interaction, games or Discord without forcing slang. Give multiple Chinese meanings, metaphor/core meaning, two concrete scenarios, mistake prevention, a nuanced alternative and a formal exam-use transfer. Return exactly this JSON shape: {"schemaVersion":2,"contentDate":"${contentDate}","difficulty":"C1","theme":"learning|campus|technology|environment|work|health|city|culture","originType":"ai_assisted","generatorVersion":"workers-ai-v2","sentence":{"english":"40-240 English characters","chinese":"natural Chinese translation","grammarNotes":["Chinese note"],"usageNotes":["Chinese note"],"collocations":[{"expression":"English","meaning":"Chinese"},{"expression":"English","meaning":"Chinese"}],"alternatives":[{"expression":"English","note":"Chinese"},{"expression":"English","note":"Chinese"}],"microExercise":"English exercise"},"vocabulary":[{"kind":"word|phrase|expression","term":"English","partOfSpeech":"precise Chinese POS","definition":"English definition","definitionZh":"complete Chinese definition","example":"English example","exampleZh":"natural Chinese translation","usageNote":"Chinese usage note"}],"practicalExpressions":[{"expression":"natural English sentence","expressionType":"phrase|idiom|response|phrasal_verb|slang","partOfSpeech":"Chinese expression type","chineseMeanings":["Chinese meaning 1","Chinese meaning 2"],"coreMeaning":"Chinese metaphor and semantic core","usageNotes":["Chinese register or nuance note"],"scenarios":[{"label":"Chinese scenario label","description":"Chinese concrete situation","example":"English dialogue/example","exampleZh":"Chinese translation"},{"label":"Chinese scenario label","description":"Chinese concrete situation","example":"English dialogue/example","exampleZh":"Chinese translation"}],"pitfalls":["Chinese mistake warning"],"alternatives":[{"expression":"English alternative","nuance":"Chinese contrast"}],"ieltsUse":"Chinese explanation of formal listening/reading/writing transfer"}],"topic":{"kind":"writing","prompt":"original English analytical prompt","preparationPoints":["Chinese planning point","Chinese planning point","Chinese planning point"]}}. Repeat the vocabulary object 3 times and the practicalExpressions object 3 times with different content. Attempt ${context.attempt}.`,
+            content: `Create one unique daily package for ${contentDate} in ${timeZone}. Use variation nonce ${variation.nonce}; it is not user data and must not appear in the output. Avoid every sentence, vocabulary term and practical expression in this recent 30-day material: ${recent}. Include exactly 3 useful vocabulary items and exactly 3 idiomatic practical expressions. Every vocabulary item must have a precise part of speech, natural Chinese meaning, English example, Chinese example translation and usage note. Practical expressions must feel current but not ephemeral, and cover real friend chat, offline interaction, games or Discord without forcing slang. Give multiple Chinese meanings, metaphor/core meaning, two concrete scenarios, mistake prevention, a nuanced alternative and a formal exam-use transfer. Return exactly this JSON shape: {"schemaVersion":2,"contentDate":"${contentDate}","difficulty":"C1","theme":"learning|campus|technology|environment|work|health|city|culture","originType":"ai_assisted","generatorVersion":"workers-ai-v2","sentence":{"english":"40-240 English characters","chinese":"natural Chinese translation","grammarNotes":["Chinese note"],"usageNotes":["Chinese note"],"collocations":[{"expression":"English","meaning":"Chinese"},{"expression":"English","meaning":"Chinese"}],"alternatives":[{"expression":"English","note":"Chinese"},{"expression":"English","note":"Chinese"}],"microExercise":"English exercise"},"vocabulary":[{"kind":"word|phrase|expression","term":"English","partOfSpeech":"precise Chinese POS","definition":"English definition","definitionZh":"complete Chinese definition","example":"English example","exampleZh":"natural Chinese translation","usageNote":"Chinese usage note"}],"practicalExpressions":[{"expression":"natural English sentence","expressionType":"phrase|idiom|response|phrasal_verb|slang","partOfSpeech":"Chinese expression type","chineseMeanings":["Chinese meaning 1","Chinese meaning 2"],"coreMeaning":"Chinese metaphor and semantic core","usageNotes":["Chinese register or nuance note"],"scenarios":[{"label":"Chinese scenario label","description":"Chinese concrete situation","example":"English dialogue/example","exampleZh":"Chinese translation"},{"label":"Chinese scenario label","description":"Chinese concrete situation","example":"English dialogue/example","exampleZh":"Chinese translation"}],"pitfalls":["Chinese mistake warning"],"alternatives":[{"expression":"English alternative","nuance":"Chinese contrast"}],"ieltsUse":"Chinese explanation of formal listening/reading/writing transfer"}],"topic":{"kind":"writing","prompt":"original English analytical prompt","preparationPoints":["Chinese planning point","Chinese planning point","Chinese planning point"]}}. Repeat the vocabulary object 3 times and the practicalExpressions object 3 times with different content. Attempt ${context.attempt}.`,
           },
         ],
         response_format: { type: 'json_object' },
         max_tokens: 3800,
+        seed: variation.seed,
         temperature: 0.78,
         frequency_penalty: 0.5,
         presence_penalty: 0.45,

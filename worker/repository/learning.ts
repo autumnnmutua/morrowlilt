@@ -119,6 +119,31 @@ export async function updateLearningTrack(
   return profile
 }
 
+export async function updateProfileTimeZone(
+  db: D1Database,
+  profileId: string,
+  timeZone: string,
+): Promise<AppProfile> {
+  const now = new Date().toISOString()
+  await db.batch([
+    db
+      .prepare(
+        `UPDATE app_profile SET time_zone = ?, updated_at = ?
+         WHERE id = ? AND time_zone <> ?`,
+      )
+      .bind(timeZone, now, profileId, timeZone),
+    db
+      .prepare(
+        `UPDATE users SET timezone = ?, updated_at = ?
+         WHERE profile_id = ? AND timezone <> ?`,
+      )
+      .bind(timeZone, now, profileId, timeZone),
+  ])
+  const profile = await getProfile(db, profileId)
+  if (!profile) throw new Error('Profile not found after timezone update')
+  return profile
+}
+
 export async function createProfileIfMissing(
   db: D1Database,
   input: {

@@ -1,6 +1,6 @@
 import { isContentDate } from '../content/schema'
 import type { ContentProvider } from '../providers/contracts'
-import { listDailyContentRange } from '../repository/daily-content'
+import { listProfileDailyContentRange } from '../repository/profile-daily-content'
 import {
   createProfileIfMissing,
   getCheckinEventByKey,
@@ -18,7 +18,7 @@ import {
   getLocalDate,
   listLocalDatesExclusiveInclusive,
 } from '../time/business-date'
-import { ensureDailyContent } from './daily-content'
+import { ensureProfileDailyContent } from './profile-daily-content'
 
 export class LearningDomainError extends Error {
   readonly code: string
@@ -39,7 +39,7 @@ export type PendingBundle = {
   learningState: 'settled' | 'unsettled'
   pendingDayCount: number
   totalItemCount: number
-  days: Awaited<ReturnType<typeof listDailyContentRange>>
+  days: Awaited<ReturnType<typeof listProfileDailyContentRange>>
 }
 
 export type CheckinMutationResult = {
@@ -172,16 +172,18 @@ export async function getPendingBundle(input: {
     input.today,
   )
   for (const contentDate of pendingDates) {
-    await ensureDailyContent({
+    await ensureProfileDailyContent({
       db: input.db,
+      profileId: input.profileId,
       contentDate,
       timeZone: profile.timeZone,
       onlineProvider: input.onlineProvider,
     })
   }
 
-  const days = await listDailyContentRange(
+  const days = await listProfileDailyContentRange(
     input.db,
+    input.profileId,
     progress.settledThroughDate,
     input.today,
   )

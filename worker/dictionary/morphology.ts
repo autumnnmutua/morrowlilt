@@ -346,11 +346,181 @@ const irregularVerbs: Record<string, VerbForms> = {
     past: 'wrote',
     pastParticiple: 'written',
   },
+  arise: {
+    thirdPerson: 'arises',
+    presentParticiple: 'arising',
+    past: 'arose',
+    pastParticiple: 'arisen',
+  },
+  bear: {
+    thirdPerson: 'bears',
+    presentParticiple: 'bearing',
+    past: 'bore',
+    pastParticiple: 'borne',
+  },
+  beat: {
+    thirdPerson: 'beats',
+    presentParticiple: 'beating',
+    past: 'beat',
+    pastParticiple: 'beaten',
+  },
+  bend: {
+    thirdPerson: 'bends',
+    presentParticiple: 'bending',
+    past: 'bent',
+    pastParticiple: 'bent',
+  },
+  bind: {
+    thirdPerson: 'binds',
+    presentParticiple: 'binding',
+    past: 'bound',
+    pastParticiple: 'bound',
+  },
+  bite: {
+    thirdPerson: 'bites',
+    presentParticiple: 'biting',
+    past: 'bit',
+    pastParticiple: 'bitten',
+  },
+  blow: {
+    thirdPerson: 'blows',
+    presentParticiple: 'blowing',
+    past: 'blew',
+    pastParticiple: 'blown',
+  },
+  breed: {
+    thirdPerson: 'breeds',
+    presentParticiple: 'breeding',
+    past: 'bred',
+    pastParticiple: 'bred',
+  },
+  burst: {
+    thirdPerson: 'bursts',
+    presentParticiple: 'bursting',
+    past: 'burst',
+    pastParticiple: 'burst',
+  },
+  cast: {
+    thirdPerson: 'casts',
+    presentParticiple: 'casting',
+    past: 'cast',
+    pastParticiple: 'cast',
+  },
+  cling: {
+    thirdPerson: 'clings',
+    presentParticiple: 'clinging',
+    past: 'clung',
+    pastParticiple: 'clung',
+  },
+  deal: {
+    thirdPerson: 'deals',
+    presentParticiple: 'dealing',
+    past: 'dealt',
+    pastParticiple: 'dealt',
+  },
+  dig: {
+    thirdPerson: 'digs',
+    presentParticiple: 'digging',
+    past: 'dug',
+    pastParticiple: 'dug',
+  },
+  feed: {
+    thirdPerson: 'feeds',
+    presentParticiple: 'feeding',
+    past: 'fed',
+    pastParticiple: 'fed',
+  },
+  flee: {
+    thirdPerson: 'flees',
+    presentParticiple: 'fleeing',
+    past: 'fled',
+    pastParticiple: 'fled',
+  },
+  forbid: {
+    thirdPerson: 'forbids',
+    presentParticiple: 'forbidding',
+    past: 'forbade',
+    pastParticiple: 'forbidden',
+  },
+  forgive: {
+    thirdPerson: 'forgives',
+    presentParticiple: 'forgiving',
+    past: 'forgave',
+    pastParticiple: 'forgiven',
+  },
+  freeze: {
+    thirdPerson: 'freezes',
+    presentParticiple: 'freezing',
+    past: 'froze',
+    pastParticiple: 'frozen',
+  },
+  hang: {
+    thirdPerson: 'hangs',
+    presentParticiple: 'hanging',
+    past: 'hung',
+    pastParticiple: 'hung',
+  },
+  hide: {
+    thirdPerson: 'hides',
+    presentParticiple: 'hiding',
+    past: 'hid',
+    pastParticiple: 'hidden',
+  },
+  lay: {
+    thirdPerson: 'lays',
+    presentParticiple: 'laying',
+    past: 'laid',
+    pastParticiple: 'laid',
+  },
+  lead: {
+    thirdPerson: 'leads',
+    presentParticiple: 'leading',
+    past: 'led',
+    pastParticiple: 'led',
+  },
+  lend: {
+    thirdPerson: 'lends',
+    presentParticiple: 'lending',
+    past: 'lent',
+    pastParticiple: 'lent',
+  },
+  lie: {
+    thirdPerson: 'lies',
+    presentParticiple: 'lying',
+    past: 'lay',
+    pastParticiple: 'lain',
+  },
+  light: {
+    thirdPerson: 'lights',
+    presentParticiple: 'lighting',
+    past: 'lit',
+    pastParticiple: 'lit',
+  },
+  prove: {
+    thirdPerson: 'proves',
+    presentParticiple: 'proving',
+    past: 'proved',
+    pastParticiple: 'proven',
+  },
+  seek: {
+    thirdPerson: 'seeks',
+    presentParticiple: 'seeking',
+    past: 'sought',
+    pastParticiple: 'sought',
+  },
+  shake: {
+    thirdPerson: 'shakes',
+    presentParticiple: 'shaking',
+    past: 'shook',
+    pastParticiple: 'shaken',
+  },
 }
 
 function endsConsonantY(word: string): boolean {
   return /[^aeiou]y$/.test(word)
 }
+
+export const irregularVerbCount = Object.keys(irregularVerbs).length
 
 function thirdPerson(word: string): string {
   if (endsConsonantY(word)) return `${word.slice(0, -1)}ies`

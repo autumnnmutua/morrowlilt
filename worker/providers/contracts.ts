@@ -152,6 +152,7 @@ export type ContentGenerationContext = {
     topic: string
   }>
   regeneration: boolean
+  variationKey?: string
 }
 
 export interface ContentProvider {

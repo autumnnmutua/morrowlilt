@@ -1,12 +1,23 @@
 # MorrowLilt 晨律
 
-一个可自行部署的英语学习网站，包含每日学习包、词汇与短语测评、错题复习、完整词典查询、词形/时态、联想词和每日邮件。
+可自托管的英语学习与雅思备考辅助工具。它提供每日学习包、实用表达、词汇与短语测评、错题巩固、完整词典查询、词形联想和按用户时区发送的每日邮件。
 
-部署者可以在自己的实例中绑定并确认收件邮箱，通过自己的 Resend 账号在每天设定的本地时间接收与网站当天内容一致的英语学习邮件。
+本项目不是 IELTS、British Council、IDP 或 Cambridge 的官方产品，也不复制官方真题；练习结果只用于个人学习反馈。
+
+## 主要能力
+
+- 每个登录账号拥有独立的学习进度、打卡、测试会话、错题、收藏、邮箱和内容历史。
+- 同一账号当天内容稳定，两个账号在同一天获得不同的学习包。
+- 每日词汇包含词性、中文释义、例句、常用搭配和形态信息。
+- 词典服务完整遍历 Provider 返回的 entries、词性和 senses，并支持联想词与可选大型本地词库。
+- 用户可在设置页提供自己的 Resend sending-access API Key、已验证发送域、IANA 时区和本地发送小时。
+- 用户 API Key 只进入同源 Worker，经 AES-GCM 加密后保存到 D1；前端、API 响应和日志不会回显。
+- Cloudflare Cron 每小时唤醒一次，只为达到各自本地发送时间的用户生成并投递邮件；单个用户失败不会阻塞其他用户。
+- Workers AI 或可替换 Content Provider 可持续生成新内容；无法生成安全的新内容时明确失败，不静默循环旧内容。
 
 ## 本地运行
 
-要求 Node.js 22 或更新版本，以及 pnpm。
+需要 Node.js 24 和 pnpm 11。
 
 ```bash
 pnpm install --frozen-lockfile
@@ -14,38 +25,33 @@ pnpm db:migrate:local
 pnpm dev
 ```
 
-打开终端显示的本地地址。默认配置使用 Wrangler 的本地 D1，不需要 Cloudflare、Resend 或邮箱账号即可浏览页面和运行测试。
+打开终端显示的本地地址。默认配置使用本地 D1，浏览页面和运行测试不需要 Cloudflare、Resend 或真实邮箱。
 
-完整的本地词库导入、邮件配置、Cloudflare 部署和 Cron 设置见 [SELF_HOSTING.md](SELF_HOSTING.md)。
-
-## 功能边界
-
-- 当前按“一个部署实例对应一个学习者”设计。
-- 同一实例中的邮箱更换必须完成确认；新邮箱确认后才会替代旧邮箱接收每日邮件。
-- 每日内容按业务日期固化，同一天网页与邮件读取同一份 D1 数据。
-- 第三方词典不可用时，可回退到部署者自行导入的 Open English WordNet。
-- 完全相同的每日句子、词汇和实用表达会被长期唯一指纹拒绝；近似内容另做近期相似度检查。
-
-## 质量检查
+## 完整质量检查
 
 ```bash
-pnpm format:check
-pnpm lint
-pnpm typecheck
-pnpm test
+pnpm check
 pnpm test:e2e
-pnpm build
 pnpm audit --audit-level moderate
-pnpm license:check
-pnpm scan:public
 ```
+
+`pnpm check` 包含格式、Lint、Wrangler 类型、TypeScript、单元/Worker 测试、构建、许可证和公开内容敏感扫描。
+
+## 自行部署
+
+请阅读 [SELF_HOSTING.md](SELF_HOSTING.md)。部署者需要在自己的 Cloudflare 账号中创建 Worker 与 D1，并自行配置 Cloudflare Access。邮件有两种模式：
+
+1. 部署者为一个平台账号设置 Worker Resend Secret；
+2. 其他用户在设置页提供自己的 Resend API Key 和已验证发送域。
+
+公共仓库与 CI 不包含真实 Cloudflare ID、Access audience、Resend Key、收件邮箱或生产部署凭证，也不会自动向维护者的生产环境部署。
 
 ## 文档
 
-- [SELF_HOSTING.md](SELF_HOSTING.md)：本地运行、D1、Resend、Cron 和 Cloudflare 部署
-- [ARCHITECTURE.md](ARCHITECTURE.md)：系统结构、数据流和单租户边界
+- [SELF_HOSTING.md](SELF_HOSTING.md)：本地运行、D1、Access、Workers AI、Resend 和 Cron
+- [ARCHITECTURE.md](ARCHITECTURE.md)：多用户隔离、内容与邮件数据流
 - [CONTRIBUTING.md](CONTRIBUTING.md)：贡献与提交检查
 - [SECURITY.md](SECURITY.md)：漏洞报告与 Secret 处理
 - [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)：第三方数据与软件许可
 
-项目源码使用 MIT License。第三方数据、模型、API 和依赖仍适用各自许可与服务条款。
+项目源码使用 MIT License；第三方数据、模型、API 和依赖仍适用各自许可与服务条款。

@@ -162,3 +162,65 @@ export async function ensureDailyLearningPackage(input: {
   if (!persisted) throw new Error('DAILY_PACKAGE_PERSIST_FAILED')
   return persisted
 }
+
+export async function getProfileDailyLearningPackage(
+  db: D1Database,
+  profileId: string,
+  contentDate: string,
+): Promise<DailyLearningPackage | undefined> {
+  const row = await db
+    .prepare(
+      `SELECT package_json, content_hash
+       FROM profile_daily_learning_packages
+       WHERE profile_id = ? AND content_date = ? LIMIT 1`,
+    )
+    .bind(profileId, contentDate)
+    .first<PackageRow>()
+  return row ? packageFromRow(row) : undefined
+}
+
+export async function ensureProfileDailyLearningPackage(input: {
+  db: D1Database
+  profileId: string
+  content: PersistedDailyContent
+}): Promise<DailyLearningPackage> {
+  const existing = await getProfileDailyLearningPackage(
+    input.db,
+    input.profileId,
+    input.content.contentDate,
+  )
+  if (existing) return existing
+  const dailyPackage = buildPackage(input.content)
+  const semanticHash = await sha256(
+    JSON.stringify({
+      contentFingerprint: input.content.fingerprint,
+      vocabulary: dailyPackage.vocabulary.map((item) => item.term),
+      sentence: input.content.payload.sentence.english,
+      expressions: dailyPackage.phrases.map((item) => item.expression),
+    }),
+  )
+  const createdAt = new Date().toISOString()
+  await input.db
+    .prepare(
+      `INSERT INTO profile_daily_learning_packages (
+         profile_id, content_date, content_id, package_json, content_hash, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?)
+       ON CONFLICT(profile_id, content_date) DO NOTHING`,
+    )
+    .bind(
+      input.profileId,
+      input.content.contentDate,
+      input.content.id,
+      JSON.stringify(dailyPackage),
+      semanticHash,
+      createdAt,
+    )
+    .run()
+  const persisted = await getProfileDailyLearningPackage(
+    input.db,
+    input.profileId,
+    input.content.contentDate,
+  )
+  if (!persisted) throw new Error('PROFILE_DAILY_PACKAGE_PERSIST_FAILED')
+  return persisted
+}

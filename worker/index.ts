@@ -14,17 +14,24 @@ import { HttpContentProvider } from './providers/http-content'
 import type { ContentProvider } from './providers/contracts'
 import { FreeDictionaryProvider } from './providers/free-dictionary'
 import { DatamuseSuggestionProvider } from './providers/datamuse'
-import { checkDatabase, getDailyContent } from './repository/daily-content'
-import { getProfile, updateLearningTrack } from './repository/learning'
+import { checkDatabase } from './repository/daily-content'
+import { getProfileDailyContent } from './repository/profile-daily-content'
+import { getVerifiedEmailRecipient } from './repository/email-subscription'
+import {
+  getProfile,
+  updateLearningTrack,
+  updateProfileTimeZone,
+} from './repository/learning'
 import {
   getContentProviderConfig,
   getPublicSiteUrl,
+  getResendConfig,
   getResendSenderConfig,
+  getUserSecretEncryptionKey,
   getWorkersAiBinding,
   isWorkersAiContentEnabled,
 } from './runtime-config'
 import {
-  ensureDailyContent,
   ContentPipelineError,
   previewDailyContent,
   regenerateDailyContentWithAudit,
@@ -41,24 +48,31 @@ import {
   EmailDeliveryError,
   previewDailyEmail,
   runScheduledDailyJob,
+  sendProfileTestDailyEmail,
   sendTestDailyEmail,
 } from './services/scheduled-job'
-import { ResendEmailProvider } from './providers/resend'
+import {
+  ResendEmailProvider,
+  verifyResendSendingDomain,
+} from './providers/resend'
 import {
   WorkersAiContentProvider,
   WorkersAiDictionaryTranslationProvider,
 } from './providers/workers-ai'
 import {
   confirmEmailBinding,
+  configureUserEmailProvider,
   EmailSubscriptionError,
-  readEmailSettings,
+  readEmailSettingsWithProvider,
+  readUserEmailProvider,
   requestEmailBinding,
   stopEmailSubscription,
 } from './services/email-subscription'
 import {
-  ensureDailyLearningPackage,
-  getDailyLearningPackage,
+  ensureProfileDailyLearningPackage,
+  getProfileDailyLearningPackage,
 } from './services/daily-package'
+import { ensureProfileDailyContent } from './services/profile-daily-content'
 import {
   completeQuizSession,
   createQuizSession,
@@ -77,10 +91,9 @@ import {
   getDictionarySuggestions,
   lookupDictionary,
 } from './services/dictionary'
-import { getLocalDate } from './time/business-date'
+import { assertIanaTimeZone, getLocalDate } from './time/business-date'
 import type { QuestionType, QuizMode } from './quiz/types'
-
-const defaultProfileId = 'default'
+import { disableAccount, ensureAccountForIdentity } from './repository/accounts'
 
 function json(data: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers)
@@ -107,18 +120,67 @@ function getOnlineContentProvider(env: Env): ContentProvider | undefined {
     : undefined
 }
 
-async function ensureDefaultProfile(env: Env) {
+async function getEmailSenderForProfile(
+  env: Env,
+  profileId: string,
+): Promise<{
+  apiKey: string
+  mailFrom: string
+  publicSiteUrl: string
+  sendHourLocal: number
+}> {
+  if (profileId === 'default') {
+    const platform = getResendSenderConfig(env)
+    if (platform) return platform
+  }
+  const encryptionSecret = getUserSecretEncryptionKey(env)
+  const publicSiteUrl = getPublicSiteUrl(env)
+  if (!encryptionSecret || !publicSiteUrl) {
+    throw new EmailSubscriptionError(
+      'EMAIL_PROVIDER_NOT_CONFIGURED',
+      '请先提供自己的 Resend API 与已验证发送域名',
+      409,
+    )
+  }
+  const provider = await readUserEmailProvider({
+    db: env.DB,
+    profileId,
+    encryptionSecret,
+  })
+  if (!provider) {
+    throw new EmailSubscriptionError(
+      'EMAIL_PROVIDER_NOT_CONFIGURED',
+      '请先提供自己的 Resend API 与已验证发送域名',
+      409,
+    )
+  }
+  return { ...provider, publicSiteUrl }
+}
+
+async function ensureRequestProfile(env: Env, profileId: string) {
   return ensureAppProfile({
     db: env.DB,
-    profileId: defaultProfileId,
+    profileId,
     timeZone: env.APP_TIME_ZONE,
   })
 }
 
-async function getTodayPayload(env: Env) {
+function getRequestProfileId(request: Request): string {
+  const profileId = request.headers.get('x-morrowlilt-internal-profile') ?? ''
+  if (!/^[A-Za-z0-9:_-]{1,128}$/.test(profileId)) {
+    throw new AccessAuthError(
+      'ACCESS_PROFILE_REQUIRED',
+      'Authenticated profile context is required',
+      403,
+    )
+  }
+  return profileId
+}
+
+async function getTodayPayload(env: Env, profileId: string) {
   const profile =
-    (await getProfile(env.DB, defaultProfileId)) ??
-    (await ensureDefaultProfile(env))
+    (await getProfile(env.DB, profileId)) ??
+    (await ensureRequestProfile(env, profileId))
   const today = getLocalDate(profile.timeZone)
   const onlineProvider = getOnlineContentProvider(env)
   const bundle = await getPendingBundle({
@@ -129,8 +191,9 @@ async function getTodayPayload(env: Env) {
   })
   const todayContent =
     bundle.days.find((day) => day.contentDate === today) ??
-    (await ensureDailyContent({
+    (await ensureProfileDailyContent({
       db: env.DB,
+      profileId: profile.id,
       contentDate: today,
       timeZone: profile.timeZone,
       onlineProvider,
@@ -195,13 +258,16 @@ async function handleDailyContent(
     )
   }
 
-  const existing = await getDailyContent(env.DB, contentDate)
+  const profileId = getRequestProfileId(request)
+  const profile = await ensureRequestProfile(env, profileId)
+  const existing = await getProfileDailyContent(env.DB, profileId, contentDate)
   const data =
     existing ??
-    (await ensureDailyContent({
+    (await ensureProfileDailyContent({
       db: env.DB,
+      profileId,
       contentDate,
-      timeZone: env.APP_TIME_ZONE,
+      timeZone: profile.timeZone,
       onlineProvider: getOnlineContentProvider(env),
     }))
   return json({ data })
@@ -212,7 +278,7 @@ async function handleDailyPackage(
   env: Env,
 ): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET')
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   const contentDate =
     new URL(request.url).searchParams.get('date') ??
     getLocalDate(profile.timeZone)
@@ -222,16 +288,25 @@ async function handleDailyPackage(
       'date must be a real ISO local date',
     )
   }
-  const existing = await getDailyLearningPackage(env.DB, contentDate)
+  const existing = await getProfileDailyLearningPackage(
+    env.DB,
+    profile.id,
+    contentDate,
+  )
   if (existing) return json({ data: existing })
-  const content = await ensureDailyContent({
+  const content = await ensureProfileDailyContent({
     db: env.DB,
+    profileId: profile.id,
     contentDate,
     timeZone: profile.timeZone,
     onlineProvider: getOnlineContentProvider(env),
   })
   return json({
-    data: await ensureDailyLearningPackage({ db: env.DB, content }),
+    data: await ensureProfileDailyLearningPackage({
+      db: env.DB,
+      profileId: profile.id,
+      content,
+    }),
   })
 }
 
@@ -239,19 +314,108 @@ async function handleEmailSettings(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   if (request.method === 'GET') {
+    const platform = getResendSenderConfig(env)
     return json({
-      data: await readEmailSettings({
+      data: await readEmailSettingsWithProvider({
         db: env.DB,
         profileId: profile.id,
         timeZone: profile.timeZone,
+        platformDelivery: profile.id === 'default' && platform !== undefined,
+        platformSendHour: platform?.sendHourLocal ?? 23,
       }),
     })
   }
   if (request.method !== 'POST') return methodNotAllowed('GET, POST')
   const body = requireRecord(await readBoundedRequestJson(request))
   const action = body.action
+  if (action === 'configure_provider') {
+    if (
+      Object.keys(body).length !== 5 ||
+      typeof body.apiKey !== 'string' ||
+      typeof body.mailFrom !== 'string' ||
+      typeof body.timeZone !== 'string' ||
+      typeof body.sendHourLocal !== 'number'
+    ) {
+      throw new RequestValidationError(
+        'INVALID_EMAIL_PROVIDER_BODY',
+        'Provider configuration requires apiKey, mailFrom, timeZone and sendHourLocal',
+      )
+    }
+    if (profile.id === 'default') {
+      throw new EmailSubscriptionError(
+        'EMAIL_PROVIDER_MANAGED',
+        '此账号使用站点已配置的邮件服务',
+        409,
+      )
+    }
+    try {
+      assertIanaTimeZone(body.timeZone)
+    } catch {
+      throw new RequestValidationError(
+        'INVALID_TIME_ZONE',
+        'timeZone must be a valid IANA time zone',
+      )
+    }
+    const encryptionSecret = getUserSecretEncryptionKey(env)
+    if (!encryptionSecret) {
+      throw new EmailSubscriptionError(
+        'EMAIL_PROVIDER_ENCRYPTION_NOT_CONFIGURED',
+        '站点尚未配置用户 API 加密服务',
+        503,
+      )
+    }
+    let domainVerification
+    try {
+      domainVerification = await verifyResendSendingDomain(
+        body.apiKey.trim(),
+        body.mailFrom.trim(),
+      )
+    } catch {
+      throw new EmailSubscriptionError(
+        'EMAIL_PROVIDER_VERIFICATION_UNAVAILABLE',
+        '暂时无法向 Resend 核验发送域，请稍后重试',
+        502,
+      )
+    }
+    if (!domainVerification.verified) {
+      throw new EmailSubscriptionError(
+        domainVerification.reason === 'invalid_sender'
+          ? 'EMAIL_PROVIDER_SENDER_INVALID'
+          : 'EMAIL_PROVIDER_DOMAIN_NOT_VERIFIED',
+        domainVerification.reason === 'invalid_sender'
+          ? '请输入有效的发件地址'
+          : 'Resend API 与发件地址必须属于同一个已验证且启用发送的自有域名',
+        400,
+      )
+    }
+    const configured = await configureUserEmailProvider({
+      db: env.DB,
+      profileId: profile.id,
+      apiKey: body.apiKey,
+      mailFrom: body.mailFrom,
+      sendHourLocal: body.sendHourLocal,
+      encryptionSecret,
+    })
+    const updatedProfile = await updateProfileTimeZone(
+      env.DB,
+      profile.id,
+      body.timeZone,
+    )
+    return json({
+      data: {
+        ...(await readEmailSettingsWithProvider({
+          db: env.DB,
+          profileId: profile.id,
+          timeZone: updatedProfile.timeZone,
+          platformDelivery: false,
+          platformSendHour: 23,
+        })),
+        ...configured,
+      },
+    })
+  }
   if (action === 'bind') {
     if (Object.keys(body).length !== 2 || typeof body.email !== 'string') {
       throw new RequestValidationError(
@@ -259,14 +423,7 @@ async function handleEmailSettings(
         'Email binding requires only action and email',
       )
     }
-    const config = getResendSenderConfig(env)
-    if (!config) {
-      throw new EmailSubscriptionError(
-        'EMAIL_NOT_CONFIGURED',
-        '邮件服务尚未完成生产配置',
-        503,
-      )
-    }
+    const config = await getEmailSenderForProfile(env, profile.id)
     return json({
       data: await requestEmailBinding({
         db: env.DB,
@@ -307,17 +464,32 @@ async function handleEmailSettings(
     })
   }
   if (action === 'test' && Object.keys(body).length === 1) {
-    const outcome = await sendTestDailyEmail({
+    const recipient = await getVerifiedEmailRecipient(env.DB, profile.id)
+    if (!recipient) {
+      throw new EmailSubscriptionError(
+        'EMAIL_RECIPIENT_NOT_VERIFIED',
+        '请先完成邮箱确认',
+        409,
+      )
+    }
+    const sender = await getEmailSenderForProfile(env, profile.id)
+    const outcome = await sendProfileTestDailyEmail({
       env,
-      contentDate: getLocalDate(profile.timeZone),
-      useConfiguredRecipient: true,
+      profileId: profile.id,
+      timeZone: profile.timeZone,
+      recipient,
+      apiKey: sender.apiKey,
+      mailFrom: sender.mailFrom,
+      publicSiteUrl: sender.publicSiteUrl,
     })
     return json({
       data: {
-        ...(await readEmailSettings({
+        ...(await readEmailSettingsWithProvider({
           db: env.DB,
           profileId: profile.id,
           timeZone: profile.timeZone,
+          platformDelivery: profile.id === 'default',
+          platformSendHour: sender.sendHourLocal,
         })),
         testOutcome: outcome.outcome,
       },
@@ -331,7 +503,9 @@ async function handleEmailSettings(
 
 async function handleToday(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET')
-  return json({ data: await getTodayPayload(env) })
+  return json({
+    data: await getTodayPayload(env, getRequestProfileId(request)),
+  })
 }
 
 async function handleCheckin(request: Request, env: Env): Promise<Response> {
@@ -347,7 +521,7 @@ async function handleCheckin(request: Request, env: Env): Promise<Response> {
     )
   }
 
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   const today = getLocalDate(profile.timeZone)
   await getPendingBundle({
     db: env.DB,
@@ -369,7 +543,10 @@ async function handleCheckin(request: Request, env: Env): Promise<Response> {
         idempotencyKey: getIdempotencyKey(request),
       }))
 
-  return json({ data: await getTodayPayload(env), mutation })
+  return json({
+    data: await getTodayPayload(env, getRequestProfileId(request)),
+    mutation,
+  })
 }
 
 async function handleUndo(request: Request, env: Env): Promise<Response> {
@@ -382,7 +559,7 @@ async function handleUndo(request: Request, env: Env): Promise<Response> {
     )
   }
 
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   const today = getLocalDate(profile.timeZone)
   const mutation = await undoTodayLearned({
     db: env.DB,
@@ -390,7 +567,10 @@ async function handleUndo(request: Request, env: Env): Promise<Response> {
     today,
     idempotencyKey: getIdempotencyKey(request),
   })
-  return json({ data: await getTodayPayload(env), mutation })
+  return json({
+    data: await getTodayPayload(env, getRequestProfileId(request)),
+    mutation,
+  })
 }
 
 function requireContentDate(value: unknown): string {
@@ -569,7 +749,7 @@ async function handleQuizSessions(
   request: Request,
   env: Env,
 ): Promise<Response> {
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   if (request.method === 'GET') {
     return json({
       data: (await getActiveQuizSession(env.DB, profile.id)) ?? null,
@@ -614,7 +794,7 @@ async function handleQuizSession(
   sessionId: string,
 ): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET')
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   return json({ data: await getQuizSessionView(env.DB, profile.id, sessionId) })
 }
 
@@ -639,7 +819,7 @@ async function handleQuizAnswer(
       'questionId, a bounded response, and durationMs are required',
     )
   }
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   return json({
     data: await submitQuizAnswer({
       db: env.DB,
@@ -667,7 +847,7 @@ async function handleQuizComplete(
       'Complete body must be empty',
     )
   }
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   return json({
     data: await completeQuizSession({
       db: env.DB,
@@ -684,7 +864,7 @@ async function handleQuizReport(
   sessionId?: string,
 ): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET')
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   return json({
     data: (await getQuizReport(env.DB, profile.id, sessionId)) ?? null,
   })
@@ -692,14 +872,14 @@ async function handleQuizReport(
 
 async function handleMistakes(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET')
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   return json({ data: await listMistakes(env.DB, profile.id) })
 }
 
 async function handleDictionary(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET')
   const rawTerm = new URL(request.url).searchParams.get('term') ?? ''
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   const ai = getWorkersAiBinding(env)
   return json({
     data: await lookupDictionary({
@@ -720,7 +900,7 @@ async function handleDictionaryHistory(
   env: Env,
 ): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET')
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   return json({ data: await getDictionaryHistory(env.DB, profile.id) })
 }
 
@@ -730,7 +910,7 @@ async function handleDictionarySuggestions(
 ): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET')
   const rawQuery = new URL(request.url).searchParams.get('q') ?? ''
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   return json({
     data: await getDictionarySuggestions({
       db: env.DB,
@@ -755,7 +935,7 @@ async function handleSaveDictionaryTerm(
       'Request body must contain only term',
     )
   }
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   return json({
     data: await addDictionaryTerm({
       db: env.DB,
@@ -768,7 +948,7 @@ async function handleSaveDictionaryTerm(
 }
 
 async function handleSettings(request: Request, env: Env): Promise<Response> {
-  const profile = await ensureDefaultProfile(env)
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   if (request.method === 'GET') {
     return json({
       data: {
@@ -799,6 +979,17 @@ async function handleSettings(request: Request, env: Env): Promise<Response> {
       timeZone: updated.timeZone,
     },
   })
+}
+
+async function handleAccount(request: Request, env: Env): Promise<Response> {
+  const profileId = getRequestProfileId(request)
+  if (request.method === 'GET' || request.method === 'POST') {
+    return json({ data: { status: 'active' } })
+  }
+  if (request.method !== 'DELETE') return methodNotAllowed('GET, POST, DELETE')
+  requireIdempotencyKey(request)
+  await disableAccount(env.DB, profileId)
+  return json({ data: { status: 'disabled' } })
 }
 
 async function routeApi(request: Request, env: Env): Promise<Response> {
@@ -850,6 +1041,9 @@ async function routeApi(request: Request, env: Env): Promise<Response> {
       return handleSaveDictionaryTerm(request, env, 'review')
     case '/api/settings':
       return handleSettings(request, env)
+    case '/api/account':
+    case '/api/account/reauthorize':
+      return handleAccount(request, env)
     case '/api/email/settings':
       return handleEmailSettings(request, env)
     default:
@@ -863,11 +1057,35 @@ async function routeApi(request: Request, env: Env): Promise<Response> {
 export default {
   async fetch(request, env): Promise<Response> {
     try {
-      if (new URL(request.url).pathname.startsWith('/api/')) {
-        await requireAccessAuthorization(request, env)
+      let routedRequest = request
+      const pathname = new URL(request.url).pathname
+      if (pathname.startsWith('/api/')) {
+        const identity = await requireAccessAuthorization(request, env)
         requireSameOriginMutation(request)
+        let account
+        try {
+          account = await ensureAccountForIdentity({
+            db: env.DB,
+            identity,
+            defaultTimeZone: env.APP_TIME_ZONE,
+            ownerEmail: getResendConfig(env)?.recipientEmail,
+            allowReauthorize: pathname === '/api/account/reauthorize',
+          })
+        } catch (error) {
+          const code = error instanceof Error ? error.message : 'ACCOUNT_ERROR'
+          throw new AccessAuthError(
+            code.startsWith('ACCESS_') || code === 'ACCOUNT_DISABLED'
+              ? code
+              : 'ACCOUNT_PROVISION_FAILED',
+            'The authenticated account could not be initialized',
+            code === 'ACCOUNT_DISABLED' ? 403 : 409,
+          )
+        }
+        const headers = new Headers(request.headers)
+        headers.set('x-morrowlilt-internal-profile', account.profileId)
+        routedRequest = new Request(request, { headers })
       }
-      return await routeApi(request, env)
+      return await routeApi(routedRequest, env)
     } catch (error) {
       if (error instanceof AccessAuthError) {
         return json(

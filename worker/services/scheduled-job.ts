@@ -13,18 +13,24 @@ import {
 } from '../repository/email-delivery'
 import type { PersistedDailyContent } from '../repository/daily-content'
 import { getVerifiedEmailRecipient } from '../repository/email-subscription'
+import { listVerifiedEmailTargets } from '../repository/email-provider'
 import {
   getContentProviderConfig,
+  getPublicSiteUrl,
   getResendConfig,
   getResendSenderConfig,
+  getUserSecretEncryptionKey,
   getWorkersAiBinding,
   isWorkersAiContentEnabled,
 } from '../runtime-config'
 import { getBusinessDate, getBusinessHour } from '../time/business-date'
 import { ensureDailyContent } from './daily-content'
 import { ensureDailyLearningPackage } from './daily-package'
+import { ensureProfileDailyLearningPackage } from './daily-package'
 import { ensureAppProfile } from './learning'
 import { WorkersAiContentProvider } from '../providers/workers-ai'
+import { decryptSecret } from '../security/secret-envelope'
+import { ensureProfileDailyContent } from './profile-daily-content'
 
 export class EmailDeliveryError extends Error {
   readonly code: string
@@ -73,6 +79,7 @@ function classifyEmailError(error: unknown): EmailDeliveryError {
 
 export async function deliverDailyEmail(input: {
   db: D1Database
+  profileId?: string
   content: PersistedDailyContent
   provider: EmailProvider
   recipient: string
@@ -90,6 +97,7 @@ export async function deliverDailyEmail(input: {
   )
   const claim = await claimEmailDelivery({
     db: input.db,
+    profileId: input.profileId ?? 'default',
     contentDate: input.content.contentDate,
     recipientHash,
     deliveryKey,
@@ -176,65 +184,143 @@ async function ensureEmailPackage(
   return content
 }
 
+async function ensureProfileEmailPackage(input: {
+  env: Env
+  profileId: string
+  contentDate: string
+  timeZone: string
+}): Promise<PersistedDailyContent> {
+  await ensureAppProfile({
+    db: input.env.DB,
+    profileId: input.profileId,
+    timeZone: input.timeZone,
+  })
+  const content = await ensureProfileDailyContent({
+    db: input.env.DB,
+    profileId: input.profileId,
+    contentDate: input.contentDate,
+    timeZone: input.timeZone,
+    onlineProvider: getOnlineProvider(input.env),
+  })
+  await ensureProfileDailyLearningPackage({
+    db: input.env.DB,
+    profileId: input.profileId,
+    content,
+  })
+  return content
+}
+
 export async function runScheduledDailyJob(
   scheduledTime: number,
   env: Env,
 ): Promise<void> {
-  const contentDate = getBusinessDate(scheduledTime, env.APP_TIME_ZONE)
-  const content = await ensureEmailPackage(env, contentDate)
-  const senderConfig = getResendSenderConfig(env)
-  if (!senderConfig) {
-    console.log(
-      JSON.stringify({
-        event: 'daily_email_skipped',
-        code: 'EMAIL_NOT_CONFIGURED',
-        contentDate,
-      }),
+  const platform = getResendConfig(env)
+  const targets = await listVerifiedEmailTargets(env.DB)
+  if (
+    platform &&
+    !targets.some(
+      (target) =>
+        target.email.trim().toLowerCase() ===
+        platform.recipientEmail.trim().toLowerCase(),
     )
-    return
+  ) {
+    targets.push({
+      profileId: 'default',
+      email: platform.recipientEmail,
+      timeZone: env.APP_TIME_ZONE,
+    })
   }
+  const encryptionSecret = getUserSecretEncryptionKey(env)
+  let sent = 0
+  let skipped = 0
+  let failed = 0
 
-  const businessHour = getBusinessHour(scheduledTime, env.APP_TIME_ZONE)
-  if (businessHour !== senderConfig.sendHourLocal) {
-    console.log(
-      JSON.stringify({
-        event: 'daily_email_skipped',
-        code: 'EMAIL_OUTSIDE_SEND_HOUR',
+  for (const target of targets) {
+    const isPlatformRecipient =
+      platform !== undefined &&
+      target.email.trim().toLowerCase() ===
+        platform.recipientEmail.trim().toLowerCase()
+    const sendHourLocal = isPlatformRecipient
+      ? platform.sendHourLocal
+      : target.sendHourLocal
+    const businessHour = getBusinessHour(scheduledTime, target.timeZone)
+    if (sendHourLocal === undefined || businessHour !== sendHourLocal) {
+      skipped += 1
+      continue
+    }
+    const contentDate = getBusinessDate(scheduledTime, target.timeZone)
+    try {
+      let apiKey: string
+      let mailFrom: string
+      let publicSiteUrl: string
+      if (isPlatformRecipient) {
+        apiKey = platform.apiKey
+        mailFrom = platform.mailFrom
+        publicSiteUrl = platform.publicSiteUrl
+      } else {
+        if (
+          !encryptionSecret ||
+          !target.encryptedApiKey ||
+          !target.encryptionIv ||
+          !target.mailFrom
+        ) {
+          skipped += 1
+          continue
+        }
+        apiKey = await decryptSecret({
+          encryptionSecret,
+          ciphertext: target.encryptedApiKey,
+          iv: target.encryptionIv,
+          context: `email-provider:${target.profileId}:resend`,
+        })
+        mailFrom = target.mailFrom
+        publicSiteUrl = getPublicSiteUrl(env) ?? ''
+        if (!publicSiteUrl) {
+          skipped += 1
+          continue
+        }
+      }
+      const content = await ensureProfileEmailPackage({
+        env,
+        profileId: target.profileId,
         contentDate,
-        businessHour,
-      }),
-    )
-    return
+        timeZone: target.timeZone,
+      })
+      const result = await deliverDailyEmail({
+        db: env.DB,
+        profileId: target.profileId,
+        content,
+        provider: new ResendEmailProvider(apiKey),
+        recipient: target.email,
+        mailFrom,
+        publicSiteUrl,
+        deliveryType: 'scheduled',
+      })
+      if (result.outcome === 'sent' || result.outcome === 'already_sent') {
+        sent += 1
+      } else {
+        skipped += 1
+      }
+    } catch (error) {
+      failed += 1
+      console.error(
+        JSON.stringify({
+          event: 'daily_email_target_failed',
+          code:
+            error instanceof EmailDeliveryError
+              ? error.code
+              : 'EMAIL_TARGET_FAILED',
+          contentDate,
+        }),
+      )
+    }
   }
-
-  const recipient =
-    (await getVerifiedEmailRecipient(env.DB, 'default')) ??
-    getResendConfig(env)?.recipientEmail
-  if (!recipient) {
-    console.log(
-      JSON.stringify({
-        event: 'daily_email_skipped',
-        code: 'EMAIL_RECIPIENT_NOT_VERIFIED',
-        contentDate,
-      }),
-    )
-    return
-  }
-
-  const result = await deliverDailyEmail({
-    db: env.DB,
-    content,
-    provider: new ResendEmailProvider(senderConfig.apiKey),
-    recipient,
-    mailFrom: senderConfig.mailFrom,
-    publicSiteUrl: senderConfig.publicSiteUrl,
-    deliveryType: 'scheduled',
-  })
   console.log(
     JSON.stringify({
       event: 'daily_email_completed',
-      outcome: result.outcome,
-      contentDate,
+      sent,
+      skipped,
+      failed,
     }),
   )
 }
@@ -270,11 +356,40 @@ export async function sendTestDailyEmail(input: {
   const content = await ensureEmailPackage(input.env, input.contentDate)
   return deliverDailyEmail({
     db: input.env.DB,
+    profileId: 'default',
     content,
     provider: new ResendEmailProvider(senderConfig.apiKey),
     recipient,
     mailFrom: senderConfig.mailFrom,
     publicSiteUrl: senderConfig.publicSiteUrl,
+    deliveryType: 'test',
+  })
+}
+
+export async function sendProfileTestDailyEmail(input: {
+  env: Env
+  profileId: string
+  timeZone: string
+  recipient: string
+  apiKey: string
+  mailFrom: string
+  publicSiteUrl: string
+}): Promise<{ outcome: 'sent' | 'already_sent' | 'busy' | 'retry_exhausted' }> {
+  const contentDate = getBusinessDate(Date.now(), input.timeZone)
+  const content = await ensureProfileEmailPackage({
+    env: input.env,
+    profileId: input.profileId,
+    contentDate,
+    timeZone: input.timeZone,
+  })
+  return deliverDailyEmail({
+    db: input.env.DB,
+    profileId: input.profileId,
+    content,
+    provider: new ResendEmailProvider(input.apiKey),
+    recipient: input.recipient,
+    mailFrom: input.mailFrom,
+    publicSiteUrl: input.publicSiteUrl,
     deliveryType: 'test',
   })
 }

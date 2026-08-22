@@ -1,8 +1,9 @@
 {
   "name": "morrowlilt-self-hosted",
   "private": true,
-  "version": "0.1.0",
+  "version": "1.0.0",
   "type": "module",
+  "packageManager": "pnpm@11.19.0",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
@@ -20,7 +21,7 @@
     "db:migrate:local": "wrangler d1 migrations apply morrowlilt-local --local",
     "dictionary:build-wordnet": "node scripts/build-wordnet-sql.mjs",
     "cron:test:local": "curl http://localhost:5173/cdn-cgi/handler/scheduled?format=json",
-    "check": "pnpm run format:check && pnpm run lint && pnpm run cf-typegen:check && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run scan:public",
+    "check": "pnpm run format:check && pnpm run lint && pnpm run cf-typegen:check && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run license:check && pnpm run scan:public",
     "deploy": "pnpm run build && wrangler deploy",
     "cf-typegen": "wrangler types",
     "cf-typegen:check": "wrangler types --check"

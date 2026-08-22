@@ -50,6 +50,17 @@ export async function getEmailSubscription(
   return row ? mapUser(row) : undefined
 }
 
+export async function getEmailSubscriptionByHash(
+  db: D1Database,
+  emailHash: string,
+): Promise<EmailSubscription | undefined> {
+  const row = await db
+    .prepare(`SELECT ${columns} FROM users WHERE email_hash = ? LIMIT 1`)
+    .bind(emailHash)
+    .first<UserRow>()
+  return row ? mapUser(row) : undefined
+}
+
 export async function hasSubscriptionEvent(
   db: D1Database,
   userId: string,

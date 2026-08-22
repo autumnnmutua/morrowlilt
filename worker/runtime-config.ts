@@ -140,3 +140,8 @@ export function getPublicSiteUrl(env: Env): string | undefined {
     return undefined
   }
 }
+
+export function getUserSecretEncryptionKey(env: Env): string | undefined {
+  const value = readOptionalBinding(env, 'USER_SECRET_ENCRYPTION_KEY')
+  return value && value.length >= 32 ? value : undefined
+}
