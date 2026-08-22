@@ -39,4 +39,4 @@ The application can send a daily learning email through the Resend Email API. Re
 
 ## JavaScript dependencies
 
-Runtime and development dependencies are installed from the lockfile and remain subject to their own licenses. The automated `pnpm license:check` command rejects license expressions that have not been explicitly reviewed. One transitive prebuilt image package reports a combined Apache-2.0 and LGPL-3.0-or-later expression; downstream redistributors should review its exact package metadata and obligations for their distribution method.
+Runtime and development dependencies are installed from the lockfile and remain subject to their own licenses. The automated `pnpm license:check` command rejects license expressions that have not been explicitly reviewed. Transitive prebuilt image packages can report LGPL-3.0-or-later alone or combined with Apache-2.0 depending on the host platform; downstream redistributors should review the exact package metadata and obligations for their distribution method.

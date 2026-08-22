@@ -9,6 +9,7 @@ const reviewedLicenses = new Set([
   'CC-BY-4.0',
   'CC0-1.0',
   'ISC',
+  'LGPL-3.0-or-later',
   'MIT',
   'MIT OR Apache-2.0',
   'MIT-0',
