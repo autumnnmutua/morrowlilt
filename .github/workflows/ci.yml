@@ -50,5 +50,8 @@ jobs:
       - name: Install Chromium
         run: pnpm exec playwright install --with-deps chromium
 
+      - name: Apply local D1 migrations
+        run: pnpm db:migrate:local
+
       - name: Run browser tests
         run: pnpm test:e2e
