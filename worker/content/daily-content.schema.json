@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://morrowlilt.invalid/schemas/daily-content-v2.json",
+  "title": "MorrowLilt daily content candidate v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["payload", "provider", "attribution"],
+  "properties": {
+    "provider": { "type": "string", "minLength": 2, "maxLength": 80 },
+    "attribution": { "type": "string", "minLength": 4, "maxLength": 240 },
+    "sourceUrl": { "type": "string", "format": "uri", "pattern": "^https://" },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "contentDate",
+        "difficulty",
+        "theme",
+        "originType",
+        "generatorVersion",
+        "sentence",
+        "vocabulary",
+        "practicalExpressions",
+        "topic"
+      ],
+      "properties": {
+        "schemaVersion": { "const": 2 },
+        "contentDate": { "type": "string", "format": "date" },
+        "difficulty": { "enum": ["C1", "C2"] },
+        "theme": {
+          "enum": [
+            "learning",
+            "campus",
+            "technology",
+            "environment",
+            "work",
+            "health",
+            "city",
+            "culture"
+          ]
+        },
+        "originType": { "enum": ["original", "ai_assisted", "licensed"] },
+        "generatorVersion": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[A-Za-z0-9._/-]+$"
+        },
+        "sentence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "english",
+            "chinese",
+            "grammarNotes",
+            "usageNotes",
+            "collocations",
+            "alternatives",
+            "microExercise"
+          ],
+          "properties": {
+            "english": { "type": "string", "minLength": 40, "maxLength": 320 },
+            "chinese": { "type": "string", "minLength": 12, "maxLength": 320 },
+            "grammarNotes": { "$ref": "#/$defs/notes" },
+            "usageNotes": { "$ref": "#/$defs/notes" },
+            "collocations": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 6,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["expression", "meaning"],
+                "properties": {
+                  "expression": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 100
+                  },
+                  "meaning": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 160
+                  }
+                }
+              }
+            },
+            "alternatives": {
+              "type": "array",
+              "minItems": 2,
+              "maxItems": 6,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["expression", "note"],
+                "properties": {
+                  "expression": {
+                    "type": "string",
+                    "minLength": 2,
+                    "maxLength": 140
+                  },
+                  "note": { "type": "string", "minLength": 2, "maxLength": 180 }
+                }
+              }
+            },
+            "microExercise": {
+              "type": "string",
+              "minLength": 12,
+              "maxLength": 320
+            }
+          }
+        },
+        "vocabulary": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "term",
+              "partOfSpeech",
+              "definition",
+              "definitionZh",
+              "example",
+              "exampleZh",
+              "usageNote"
+            ],
+            "properties": {
+              "kind": { "enum": ["word", "phrase", "expression"] },
+              "term": { "type": "string", "minLength": 2, "maxLength": 100 },
+              "partOfSpeech": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 80
+              },
+              "definition": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 220
+              },
+              "definitionZh": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 120
+              },
+              "example": {
+                "type": "string",
+                "minLength": 12,
+                "maxLength": 320
+              },
+              "exampleZh": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 240
+              },
+              "usageNote": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 240
+              }
+            }
+          }
+        },
+        "practicalExpressions": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "expression",
+              "expressionType",
+              "partOfSpeech",
+              "chineseMeanings",
+              "coreMeaning",
+              "usageNotes",
+              "scenarios",
+              "pitfalls",
+              "alternatives",
+              "ieltsUse"
+            ],
+            "properties": {
+              "expression": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 120
+              },
+              "expressionType": {
+                "enum": ["phrase", "idiom", "response", "phrasal_verb", "slang"]
+              },
+              "partOfSpeech": {
+                "type": "string",
+                "minLength": 2,
+                "maxLength": 80
+              },
+              "chineseMeanings": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 5,
+                "items": { "type": "string", "minLength": 2, "maxLength": 100 }
+              },
+              "coreMeaning": {
+                "type": "string",
+                "minLength": 8,
+                "maxLength": 300
+              },
+              "usageNotes": { "$ref": "#/$defs/notes" },
+              "scenarios": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 4,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["label", "description", "example", "exampleZh"],
+                  "properties": {
+                    "label": {
+                      "type": "string",
+                      "minLength": 2,
+                      "maxLength": 40
+                    },
+                    "description": {
+                      "type": "string",
+                      "minLength": 6,
+                      "maxLength": 240
+                    },
+                    "example": {
+                      "type": "string",
+                      "minLength": 8,
+                      "maxLength": 260
+                    },
+                    "exampleZh": {
+                      "type": "string",
+                      "minLength": 4,
+                      "maxLength": 240
+                    }
+                  }
+                }
+              },
+              "pitfalls": { "$ref": "#/$defs/notes" },
+              "alternatives": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 4,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["expression", "nuance"],
+                  "properties": {
+                    "expression": {
+                      "type": "string",
+                      "minLength": 2,
+                      "maxLength": 120
+                    },
+                    "nuance": {
+                      "type": "string",
+                      "minLength": 4,
+                      "maxLength": 180
+                    }
+                  }
+                }
+              },
+              "ieltsUse": { "type": "string", "minLength": 8, "maxLength": 240 }
+            }
+          }
+        },
+        "topic": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["kind", "prompt", "preparationPoints"],
+          "properties": {
+            "kind": { "enum": ["speaking", "writing"] },
+            "prompt": { "type": "string", "minLength": 20, "maxLength": 420 },
+            "preparationPoints": { "$ref": "#/$defs/notes" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "notes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 5,
+      "items": { "type": "string", "minLength": 4, "maxLength": 240 }
+    }
+  }
+}

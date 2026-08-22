@@ -1,0 +1,42 @@
+# Dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+coverage/
+*.tsbuildinfo
+
+# Local runtime state and secrets
+.wrangler/
+.dev.vars*
+.env*
+!.env.example
+wrangler.private.jsonc
+wrangler.*.private.jsonc
+*.private.*
+private/
+
+# Reports, exports, logs, and captured media
+logs/
+*.log
+*-debug.log*
+exports/
+backups/
+screenshots/
+playwright-report/
+test-results/
+*.sqlite
+*.sqlite3
+*.db
+*.docx
+
+# Editor and operating-system files
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.local

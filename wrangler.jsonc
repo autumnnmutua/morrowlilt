@@ -1,0 +1,43 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "morrowlilt-local",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "vars": {
+    "APP_TIME_ZONE": "Asia/Shanghai",
+    "PUBLIC_SITE_URL": "<PLACEHOLDER>",
+    "MAIL_SEND_HOUR_LOCAL": "23",
+    "AI_CONTENT_ENABLED": "false",
+  },
+  "secrets": {
+    "required": [
+      "ADMIN_API_KEY",
+      "RESEND_API_KEY",
+      "RECIPIENT_EMAIL",
+      "MAIL_FROM",
+      "ACCESS_TEAM_DOMAIN",
+      "ACCESS_AUD",
+    ],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "morrowlilt-local",
+      "preview_database_id": "morrowlilt-local",
+      "migrations_dir": "./migrations",
+    },
+  ],
+  "triggers": {
+    "crons": ["0 15 * * *"],
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+  "upload_source_maps": false,
+}

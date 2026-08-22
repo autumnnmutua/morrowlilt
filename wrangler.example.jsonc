@@ -1,0 +1,48 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "<PLACEHOLDER>",
+  "main": "worker/index.ts",
+  "compatibility_date": "2026-08-20",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "not_found_handling": "single-page-application",
+    "run_worker_first": ["/api/*"],
+  },
+  "vars": {
+    "APP_TIME_ZONE": "<PLACEHOLDER>",
+    "PUBLIC_SITE_URL": "<PLACEHOLDER>",
+    "MAIL_SEND_HOUR_LOCAL": "<PLACEHOLDER>",
+    "AI_CONTENT_ENABLED": "<PLACEHOLDER>",
+  },
+  "secrets": {
+    "required": [
+      "ADMIN_API_KEY",
+      "RESEND_API_KEY",
+      "RECIPIENT_EMAIL",
+      "MAIL_FROM",
+      "ACCESS_TEAM_DOMAIN",
+      "ACCESS_AUD",
+    ],
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "<PLACEHOLDER>",
+      "database_id": "<PLACEHOLDER>",
+      "preview_database_id": "<PLACEHOLDER>",
+      "migrations_dir": "./migrations",
+    },
+  ],
+  "ai": {
+    "binding": "AI",
+    "remote": true,
+  },
+  "triggers": {
+    "crons": ["<PLACEHOLDER>"],
+  },
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1,
+  },
+  "upload_source_maps": false,
+}

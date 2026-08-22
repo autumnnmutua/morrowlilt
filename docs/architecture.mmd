@@ -1,0 +1,25 @@
+flowchart LR
+  Browser["React SPA\n桌面与手机"]
+  Assets["Workers Static Assets\nSPA fallback"]
+  Worker["同源 Worker API\n/api/*"]
+  Cron["Cron Trigger\nUTC 每小时占位"]
+  D1[("Cloudflare D1\n每日内容 + 学习状态")]
+  Content["Content Provider\n可选在线来源"]
+  Other["Dictionary / Translation\n后续 API 适配器"]
+  Seed["内置原创种子"]
+  Resend["Resend Email API"]
+
+  Browser -->|"页面与静态资源"| Assets
+  Browser -->|"同源 /api/*"| Worker
+  Cron -->|"scheduled + ctx.waitUntil"| Worker
+  Worker -->|"1. 查当日快照"| D1
+  Worker -->|"2. 未命中才联网"| Content
+  Content -->|"结构校验通过"| Worker
+  Worker -->|"3. 先写快照"| D1
+  D1 -->|"4. 网页与邮件共同读取"| Worker
+  Worker -->|"在线失败/无效/重复"| Seed
+  Worker -.->|"接口边界"| Other
+  Worker -->|"幂等发送"| Resend
+  Browser -->|"GET /api/today"| Worker
+  Browser -->|"POST 打卡 / 同日撤销"| Worker
+  Worker -->|"事务：事件 + 结清边界"| D1
