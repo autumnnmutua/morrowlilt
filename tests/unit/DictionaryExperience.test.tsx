@@ -90,6 +90,7 @@ const result: DictionaryResult = {
 
 afterEach(() => {
   cleanup()
+  vi.restoreAllMocks()
   vi.unstubAllGlobals()
 })
 
@@ -193,5 +194,41 @@ describe('DictionaryExperience', () => {
     fireEvent.click(screen.getByRole('button', { name: '重试查询' }))
     expect(await screen.findByText('D1 缓存')).toBeInTheDocument()
     await waitFor(() => expect(fetch).toHaveBeenCalled())
+  })
+
+  it('uses the device English voice when source audio cannot play', async () => {
+    mockHistoryAndLookup(() => Promise.resolve(Response.json({ data: result })))
+    vi.spyOn(HTMLMediaElement.prototype, 'play').mockRejectedValue(
+      new DOMException('Unsupported source', 'NotSupportedError'),
+    )
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
+    const speak = vi.fn()
+    const cancel = vi.fn()
+    vi.stubGlobal('speechSynthesis', { cancel, speak })
+    vi.stubGlobal(
+      'SpeechSynthesisUtterance',
+      class {
+        lang = ''
+        text: string
+        constructor(text: string) {
+          this.text = text
+        }
+      },
+    )
+
+    render(<DictionaryExperience />)
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+    const playButton = await screen.findByRole('button', { name: '播放发音' })
+    fireEvent.click(playButton)
+
+    expect(
+      await screen.findByText('来源音频不可用，已改用设备英语发音。'),
+    ).toBeInTheDocument()
+    expect(cancel).toHaveBeenCalledOnce()
+    expect(speak).toHaveBeenCalledOnce()
+    expect(speak.mock.calls[0][0]).toMatchObject({
+      lang: 'en-US',
+      text: 'resilient',
+    })
   })
 })

@@ -61,23 +61,43 @@ function PronunciationPlayer({
   const audio = useRef<HTMLAudioElement>(null)
   const [playbackStatus, setPlaybackStatus] = useState('')
 
+  const speakWithDeviceVoice = () => {
+    if (!(
+      'speechSynthesis' in window && 'SpeechSynthesisUtterance' in window
+    )) {
+      setPlaybackStatus('当前设备无法播放该发音，请稍后重试。')
+      return
+    }
+    window.speechSynthesis.cancel()
+    const utterance = new SpeechSynthesisUtterance(headword)
+    utterance.lang = 'en-US'
+    window.speechSynthesis.speak(utterance)
+    setPlaybackStatus('来源音频不可用，已改用设备英语发音。')
+  }
+
   const play = async () => {
     setPlaybackStatus('正在加载发音…')
     try {
       if (!audio.current) throw new Error('Audio element unavailable')
       audio.current.currentTime = 0
-      await audio.current.play()
+      let timeoutId: number | undefined
+      try {
+        await Promise.race([
+          audio.current.play(),
+          new Promise<never>((_, reject) => {
+            timeoutId = window.setTimeout(
+              () => reject(new Error('Pronunciation audio timed out')),
+              6_000,
+            )
+          }),
+        ])
+      } finally {
+        if (timeoutId !== undefined) window.clearTimeout(timeoutId)
+      }
       setPlaybackStatus('正在播放')
     } catch {
-      if ('speechSynthesis' in window && 'SpeechSynthesisUtterance' in window) {
-        window.speechSynthesis.cancel()
-        const utterance = new SpeechSynthesisUtterance(headword)
-        utterance.lang = 'en-US'
-        window.speechSynthesis.speak(utterance)
-        setPlaybackStatus('来源音频不可用，已改用设备英语发音。')
-      } else {
-        setPlaybackStatus('当前设备无法播放该发音，请稍后重试。')
-      }
+      audio.current?.pause()
+      speakWithDeviceVoice()
     }
   }
 
@@ -86,6 +106,9 @@ function PronunciationPlayer({
       <audio
         aria-label={`${headword} 发音 ${index + 1}`}
         onEnded={() => setPlaybackStatus('播放完成')}
+        onError={() =>
+          setPlaybackStatus('来源音频暂不可用，点击后将使用设备英语发音。')
+        }
         preload="metadata"
         ref={audio}
         src={audioUrl}
