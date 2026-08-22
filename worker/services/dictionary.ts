@@ -23,6 +23,40 @@ import {
 } from '../repository/lexicon'
 
 const cacheLifetimeMs = 7 * 24 * 60 * 60 * 1_000
+const dictionaryAudioHost = 'api.dictionaryapi.dev'
+const dictionaryAudioPathPrefix = '/media/pronunciations/'
+
+function validatedDictionaryAudioUrl(value: string): URL | undefined {
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' &&
+      url.hostname === dictionaryAudioHost &&
+      url.pathname.startsWith(dictionaryAudioPathPrefix)
+      ? url
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
+function proxiedAudioEntries(
+  entries: DictionaryProviderResult['entries'],
+): DictionaryProviderResult['entries'] {
+  return entries.map((entry) => ({
+    ...entry,
+    pronunciations: entry.pronunciations.map((pronunciation) => {
+      const source = pronunciation.audioUrl
+        ? validatedDictionaryAudioUrl(pronunciation.audioUrl)
+        : undefined
+      return {
+        ...pronunciation,
+        audioUrl: source
+          ? `/api/dictionary/audio?src=${encodeURIComponent(source.toString())}`
+          : undefined,
+      }
+    }),
+  }))
+}
 
 export class DictionaryDomainError extends Error {
   readonly code: string
@@ -77,7 +111,7 @@ function publicResult(
 ): DictionaryLookupResult {
   return {
     normalizedTerm,
-    entries: result.entries,
+    entries: proxiedAudioEntries(result.entries),
     requestUrl: result.requestUrl,
     licenses: result.licenses,
     attribution: result.attribution,
@@ -284,14 +318,16 @@ export async function lookupDictionary(input: {
   const normalizedTerm = normalizeDictionaryTerm(input.rawTerm)
   const now = input.now ?? Date.now()
   const searchedAt = new Date(now).toISOString()
-  await recordDictionarySearch(
-    input.db,
-    input.profileId,
-    normalizedTerm,
-    searchedAt,
-  )
-  const cached = await getDictionaryCache(input.db, normalizedTerm)
-  const local = await lookupLocalLexicon(input.db, normalizedTerm)
+  const [cached, local] = await Promise.all([
+    getDictionaryCache(input.db, normalizedTerm),
+    lookupLocalLexicon(input.db, normalizedTerm),
+    recordDictionarySearch(
+      input.db,
+      input.profileId,
+      normalizedTerm,
+      searchedAt,
+    ),
+  ])
   if (
     cached?.provider === input.provider.name &&
     Date.parse(cached.expiresAt) > now
@@ -425,7 +461,8 @@ export async function getDictionarySuggestions(input: {
     getSuggestionCache(input.db, query, new Date(now).toISOString()),
   ])
   let online = cachedOnline ?? []
-  if (!cachedOnline && input.provider) {
+  const localCandidates = [...new Set([...history, ...local])]
+  if (!cachedOnline && input.provider && localCandidates.length < 8) {
     try {
       online = await input.provider.suggest(query)
       await saveSuggestionCache(input.db, query, online, now)
@@ -445,6 +482,76 @@ export async function getDictionarySuggestions(input: {
     suggestions,
     source: online.length > 0 ? 'mixed' : 'local',
   }
+}
+
+export async function fetchDictionaryAudio(input: {
+  rawSource: string
+  range?: string
+}): Promise<Response> {
+  if (input.rawSource.length > 1_000) {
+    throw new DictionaryDomainError(
+      'INVALID_AUDIO_SOURCE',
+      'Audio source is invalid',
+    )
+  }
+  const source = validatedDictionaryAudioUrl(input.rawSource)
+  if (!source) {
+    throw new DictionaryDomainError(
+      'INVALID_AUDIO_SOURCE',
+      'Audio source is invalid',
+    )
+  }
+  const headers = new Headers({ accept: 'audio/*' })
+  if (input.range && /^bytes=\d*-\d*$/.test(input.range)) {
+    headers.set('range', input.range)
+  }
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort('timeout'), 5_000)
+  let response: Response
+  try {
+    response = await fetch(source, { headers, signal: controller.signal })
+  } catch {
+    throw new DictionaryDomainError(
+      'DICTIONARY_AUDIO_UNAVAILABLE',
+      'Pronunciation audio is temporarily unavailable',
+      502,
+    )
+  } finally {
+    clearTimeout(timeout)
+  }
+  if (!response.ok || !response.body) {
+    throw new DictionaryDomainError(
+      'DICTIONARY_AUDIO_UNAVAILABLE',
+      'Pronunciation audio is temporarily unavailable',
+      response.status === 404 ? 404 : 502,
+    )
+  }
+  const contentType = response.headers.get('content-type') ?? ''
+  const contentLength = Number(response.headers.get('content-length'))
+  if (
+    !contentType.toLowerCase().startsWith('audio/') ||
+    (Number.isFinite(contentLength) && contentLength > 4 * 1024 * 1024)
+  ) {
+    throw new DictionaryDomainError(
+      'DICTIONARY_AUDIO_INVALID',
+      'Pronunciation audio response is invalid',
+      502,
+    )
+  }
+  const outputHeaders = new Headers({
+    'cache-control': 'public, max-age=86400',
+    'content-type': contentType,
+    'cross-origin-resource-policy': 'same-origin',
+    'x-content-type-options': 'nosniff',
+  })
+  for (const name of ['accept-ranges', 'content-length', 'content-range']) {
+    const value = response.headers.get(name)
+    if (value) outputHeaders.set(name, value)
+  }
+  return new Response(response.body, {
+    status: response.status,
+    headers: outputHeaders,
+  })
 }
 
 export function dictionaryLicenses(value: unknown): DictionaryLicense[] {

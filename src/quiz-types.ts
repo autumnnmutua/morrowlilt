@@ -43,6 +43,8 @@ export type QuizReportItem = {
   standardAnswer: string
   acceptableAnswers: string[]
   explanation: string
+  responseExplanation: string
+  eliminationSteps: string[]
   isCorrect: boolean
   score: number
   durationMs: number

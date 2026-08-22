@@ -10,6 +10,11 @@ export type QuizMode = 'mixed' | 'mistake_retest'
 
 export type QuestionOption = { id: string; label: string }
 
+export type AnswerAnalysis = {
+  reasoning: string
+  optionReasons?: Record<string, string>
+}
+
 export type PublicQuestion = {
   id: string
   bankQuestionId: string
@@ -30,6 +35,7 @@ export type BankQuestion = Omit<PublicQuestion, 'id' | 'ordinal'> & {
   standardAnswer: string
   acceptableAnswers: string[]
   explanation: string
+  answerAnalysis: AnswerAnalysis
   errorReason: string
 }
 
@@ -62,6 +68,8 @@ export type QuizReportItem = {
   standardAnswer: string
   acceptableAnswers: string[]
   explanation: string
+  responseExplanation: string
+  eliminationSteps: string[]
   isCorrect: boolean
   score: number
   durationMs: number

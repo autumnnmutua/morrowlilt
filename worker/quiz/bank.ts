@@ -1,5 +1,21 @@
 import type { BankQuestion, QuestionType } from './types'
 
+function optionReason(
+  type: QuestionType,
+  label: string,
+  correct: boolean,
+  explanation: string,
+): string {
+  if (correct) return `该选项符合句意和考查点。${explanation}`
+  if (type === 'context_translation') {
+    return `“${label}”与句中给出的结果、程度或态度不一致，可由上下文排除。`
+  }
+  if (type === 'phrase_meaning') {
+    return `“${label}”没有表达该短语在句中的实际功能或语气，可排除。`
+  }
+  return `“${label}”不能同时满足空格前后的语法结构、词义和自然搭配，可排除。`
+}
+
 const choice = (
   id: string,
   type: QuestionType,
@@ -22,6 +38,15 @@ const choice = (
   standardAnswer: answer,
   acceptableAnswers: [answer],
   explanation,
+  answerAnalysis: {
+    reasoning: `先看空格前后的语法结构，再核对语境和固定搭配。${explanation}`,
+    optionReasons: Object.fromEntries(
+      options.map(([optionId, label]) => [
+        optionId,
+        optionReason(type, label, optionId === answer, explanation),
+      ]),
+    ),
+  },
   theme,
   difficulty: 'C1',
   tags,
@@ -50,6 +75,9 @@ const text = (
   standardAnswer: answer,
   acceptableAnswers,
   explanation,
+  answerAnalysis: {
+    reasoning: `先根据中文提示确定词义和词性，再检查拼写与句中形式。${explanation}`,
+  },
   theme,
   difficulty: 'C1',
   tags,
@@ -176,49 +204,69 @@ export const questionBank: BankQuestion[] = [
     'spelling_error',
   ),
 
-  text(
+  choice(
     'cloze-mitigate',
     'cloze',
-    '用一个词完成句子。',
+    '选择最适合填入空格的词。',
     'Targeted subsidies may ______ the impact of rising energy prices on low-income households.',
-    'mitigate',
-    ['mitigate', 'lessen'],
-    'mitigate the impact 表示减轻影响；lessen 也可接受。',
+    [
+      ['a', 'mitigate'],
+      ['b', 'intensify'],
+      ['c', 'allocate'],
+      ['d', 'predict'],
+    ],
+    'a',
+    'mitigate the impact 是自然搭配，表示“减轻影响”。',
     '经济与社会',
     ['完形', '动词搭配'],
     'incomplete_answer',
   ),
-  text(
+  choice(
     'cloze-foster',
     'cloze',
-    '用一个词完成句子。',
+    '选择最适合填入空格的词。',
     'Well-designed public spaces can ______ a stronger sense of community.',
-    'foster',
-    ['foster', 'promote'],
+    [
+      ['a', 'foster'],
+      ['b', 'interrupt'],
+      ['c', 'estimate'],
+      ['d', 'withdraw'],
+    ],
+    'a',
     'foster a sense of community 表示培育社区归属感。',
     '城市与社区',
     ['完形', '动词搭配'],
     'incomplete_answer',
   ),
-  text(
+  choice(
     'cloze-undermine',
     'cloze',
-    '用一个词完成句子。',
+    '选择最适合填入空格的词。',
     'A lack of transparency can ______ public trust in institutions.',
-    'undermine',
-    ['undermine', 'erode'],
-    'undermine 或 erode public trust 都表示削弱公众信任。',
+    [
+      ['a', 'restore'],
+      ['b', 'undermine'],
+      ['c', 'measure'],
+      ['d', 'publish'],
+    ],
+    'b',
+    'undermine public trust 表示逐步削弱公众信任。',
     '文化与社会',
     ['完形', '学术表达'],
     'incomplete_answer',
   ),
-  text(
+  choice(
     'cloze-outweigh',
     'cloze',
-    '用一个词完成句子。',
+    '选择最适合填入空格的词。',
     'For many commuters, the benefits of flexibility ______ the minor inconvenience.',
-    'outweigh',
-    ['outweigh'],
+    [
+      ['a', 'outweigh'],
+      ['b', 'postpone'],
+      ['c', 'resemble'],
+      ['d', 'divide'],
+    ],
+    'a',
     'A outweighs B 表示 A 的重要性或好处超过 B。',
     '工作',
     ['完形', '比较'],
@@ -391,13 +439,18 @@ export const questionBank: BankQuestion[] = [
     ['拼写', '副词'],
     'spelling_error',
   ),
-  text(
+  choice(
     'cloze-de-escalate',
     'cloze',
-    '用一个词完成句子，使其表达“缓和冲突”。',
+    '选择能表达“缓和冲突”的词。',
     'A neutral facilitator can help ___ the dispute before positions harden.',
-    'de-escalate',
-    ['de-escalate', 'deescalate'],
+    [
+      ['a', 'prolong'],
+      ['b', 'de-escalate'],
+      ['c', 'document'],
+      ['d', 'categorise'],
+    ],
+    'b',
     'de-escalate 表示降低冲突、危险或紧张局面的强度。',
     '工作',
     ['完形', '冲突管理'],
@@ -420,13 +473,18 @@ export const questionBank: BankQuestion[] = [
     ['搭配', '形容词'],
     'collocation_confusion',
   ),
-  text(
+  choice(
     'cloze-impair',
     'cloze',
-    '填写动词，使句子表达“损害判断力”。',
+    '选择能表达“损害判断力”的动词。',
     'Severe fatigue can ___ judgement even when a person feels confident.',
-    'impair',
-    ['impair'],
+    [
+      ['a', 'clarify'],
+      ['b', 'justify'],
+      ['c', 'impair'],
+      ['d', 'confirm'],
+    ],
+    'c',
     'impair judgement/vision/memory 表示削弱某项能力或功能。',
     '健康',
     ['完形', '动词搭配'],
@@ -495,13 +553,18 @@ export const questionBank: BankQuestion[] = [
     ['搭配', '动词'],
     'collocation_confusion',
   ),
-  text(
+  choice(
     'cloze-accessible',
     'cloze',
-    '填写形容词，使句子表达“所有居民都容易使用”。',
+    '选择能表达“所有居民都容易使用”的形容词。',
     'Public services should remain ___ to residents with different mobility needs.',
-    'accessible',
-    ['accessible'],
+    [
+      ['a', 'optional'],
+      ['b', 'accessible'],
+      ['c', 'temporary'],
+      ['d', 'exclusive'],
+    ],
+    'b',
     'accessible to somebody 表示某人容易到达、使用或理解某事物。',
     '城市与社区',
     ['完形', '形容词搭配'],

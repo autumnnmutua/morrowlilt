@@ -76,6 +76,7 @@ import { ensureProfileDailyContent } from './services/profile-daily-content'
 import {
   completeQuizSession,
   createQuizSession,
+  dismissMasteredMistake,
   getActiveQuizSession,
   getQuizReport,
   getQuizSessionView,
@@ -87,13 +88,18 @@ import {
 import {
   addDictionaryTerm,
   DictionaryDomainError,
+  fetchDictionaryAudio,
   getDictionaryHistory,
   getDictionarySuggestions,
   lookupDictionary,
 } from './services/dictionary'
 import { assertIanaTimeZone, getLocalDate } from './time/business-date'
 import type { QuestionType, QuizMode } from './quiz/types'
-import { disableAccount, ensureAccountForIdentity } from './repository/accounts'
+import {
+  disableAccount,
+  ensureAccountForIdentity,
+  touchIdentityLastSeen,
+} from './repository/accounts'
 
 function json(data: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers)
@@ -876,6 +882,29 @@ async function handleMistakes(request: Request, env: Env): Promise<Response> {
   return json({ data: await listMistakes(env.DB, profile.id) })
 }
 
+async function handleMistake(
+  request: Request,
+  env: Env,
+  mistakeId: string,
+): Promise<Response> {
+  if (request.method !== 'DELETE') return methodNotAllowed('DELETE')
+  requireIdempotencyKey(request)
+  if (!/^[A-Za-z0-9:_-]{1,128}$/.test(mistakeId)) {
+    throw new RequestValidationError(
+      'INVALID_MISTAKE_ID',
+      'Mistake id is invalid',
+    )
+  }
+  const profile = await ensureRequestProfile(env, getRequestProfileId(request))
+  return json({
+    data: await dismissMasteredMistake({
+      db: env.DB,
+      profileId: profile.id,
+      mistakeId,
+    }),
+  })
+}
+
 async function handleDictionary(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET')
   const rawTerm = new URL(request.url).searchParams.get('term') ?? ''
@@ -892,6 +921,15 @@ async function handleDictionary(request: Request, env: Env): Promise<Response> {
           : undefined,
       rawTerm,
     }),
+  })
+}
+
+async function handleDictionaryAudio(request: Request): Promise<Response> {
+  if (request.method !== 'GET') return methodNotAllowed('GET')
+  const url = new URL(request.url)
+  return fetchDictionaryAudio({
+    rawSource: url.searchParams.get('src') ?? '',
+    range: request.headers.get('range') ?? undefined,
   })
 }
 
@@ -994,6 +1032,8 @@ async function handleAccount(request: Request, env: Env): Promise<Response> {
 
 async function routeApi(request: Request, env: Env): Promise<Response> {
   const path = new URL(request.url).pathname
+  const mistakeMatch = path.match(/^\/api\/mistakes\/([^/]+)$/)
+  if (mistakeMatch) return handleMistake(request, env, mistakeMatch[1])
   const answerMatch = path.match(/^\/api\/quiz\/sessions\/([^/]+)\/answers$/)
   if (answerMatch) return handleQuizAnswer(request, env, answerMatch[1])
   const completeMatch = path.match(/^\/api\/quiz\/sessions\/([^/]+)\/complete$/)
@@ -1031,6 +1071,8 @@ async function routeApi(request: Request, env: Env): Promise<Response> {
       return handleMistakes(request, env)
     case '/api/dictionary':
       return handleDictionary(request, env)
+    case '/api/dictionary/audio':
+      return handleDictionaryAudio(request)
     case '/api/dictionary/history':
       return handleDictionaryHistory(request, env)
     case '/api/dictionary/suggestions':
@@ -1055,7 +1097,7 @@ async function routeApi(request: Request, env: Env): Promise<Response> {
 }
 
 export default {
-  async fetch(request, env): Promise<Response> {
+  async fetch(request, env, ctx): Promise<Response> {
     try {
       let routedRequest = request
       const pathname = new URL(request.url).pathname
@@ -1084,6 +1126,20 @@ export default {
         const headers = new Headers(request.headers)
         headers.set('x-morrowlilt-internal-profile', account.profileId)
         routedRequest = new Request(request, { headers })
+        ctx.waitUntil(
+          touchIdentityLastSeen({
+            db: env.DB,
+            issuer: identity.issuer,
+            subject: identity.subject,
+          }).catch((error: unknown) => {
+            console.error(
+              JSON.stringify({
+                event: 'identity_last_seen_update_failed',
+                code: error instanceof Error ? error.name : 'UNKNOWN_ERROR',
+              }),
+            )
+          }),
+        )
       }
       return await routeApi(routedRequest, env)
     } catch (error) {

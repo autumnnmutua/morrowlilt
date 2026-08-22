@@ -115,14 +115,6 @@ export async function ensureAccountForIdentity(input: {
       await setAccountStatus(input.db, existingIdentity.profileId, 'active')
       return { ...existingIdentity, status: 'active' }
     }
-    const now = (input.now ?? new Date()).toISOString()
-    await input.db
-      .prepare(
-        `UPDATE auth_identities SET last_seen_at = ?
-         WHERE issuer = ? AND subject = ?`,
-      )
-      .bind(now, input.identity.issuer, input.identity.subject)
-      .run()
     return existingIdentity
   }
 
@@ -201,6 +193,21 @@ export async function ensureAccountForIdentity(input: {
   )
   if (!account) throw new Error('ACCOUNT_PROVISION_FAILED')
   return account
+}
+
+export async function touchIdentityLastSeen(input: {
+  db: D1Database
+  issuer: string
+  subject: string
+  now?: Date
+}): Promise<void> {
+  await input.db
+    .prepare(
+      `UPDATE auth_identities SET last_seen_at = ?
+       WHERE issuer = ? AND subject = ?`,
+    )
+    .bind((input.now ?? new Date()).toISOString(), input.issuer, input.subject)
+    .run()
 }
 
 async function setAccountStatus(

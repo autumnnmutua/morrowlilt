@@ -6,7 +6,7 @@ import type {
   QuizSession,
 } from '../quiz-types'
 import type { PageId } from '../types'
-import { apiGet, apiMutation } from '../lib/api'
+import { apiDelete, apiGet, apiMutation } from '../lib/api'
 import {
   mistakeListSchema,
   quizReportSchema,
@@ -30,6 +30,19 @@ const selectableTypes = Object.keys(labels).filter(
 function formatDuration(milliseconds: number) {
   const seconds = Math.round(milliseconds / 1000)
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`
+}
+
+function errorReasonLabel(reason: string): string {
+  const labels: Record<string, string> = {
+    spelling_error: '拼写或词形不符合提示',
+    collocation_confusion: '固定搭配辨析错误',
+    meaning_confusion: '语境词义辨析错误',
+    incomplete_answer: '未满足句意或句法要求',
+    word_form_error: '词形不符合句中结构',
+    preposition_error: '搭配或介词关系错误',
+    no_answer: '未作答',
+  }
+  return labels[reason] ?? reason
 }
 
 function DegradedNotice({ reason }: { reason?: string }) {
@@ -135,9 +148,29 @@ export function QuizReportPanel({
                   {item.standardAnswer}
                 </p>
                 <p>{item.explanation}</p>
+                {!item.isCorrect && (
+                  <div className="answer-analysis">
+                    <p>
+                      <strong>为什么你的答案不合适：</strong>
+                      {item.responseExplanation}
+                    </p>
+                    {item.eliminationSteps.length > 0 && (
+                      <>
+                        <strong>逐项排除：</strong>
+                        <ul>
+                          {item.eliminationSteps.map((step) => (
+                            <li key={step}>{step}</li>
+                          ))}
+                        </ul>
+                      </>
+                    )}
+                  </div>
+                )}
                 <small>
                   用时 {formatDuration(item.durationMs)}
-                  {item.errorReason ? ` · 错误原因：${item.errorReason}` : ''}
+                  {item.errorReason
+                    ? ` · 错误类型：${errorReasonLabel(item.errorReason)}`
+                    : ''}
                 </small>
               </div>
             </article>
@@ -516,6 +549,8 @@ export function MistakeReviewPage({
   const [items, setItems] = useState<MistakeItem[]>()
   const [message, setMessage] = useState('正在读取巩固队列…')
   const [starting, setStarting] = useState(false)
+  const [pendingDeleteId, setPendingDeleteId] = useState<string>()
+  const [deletingId, setDeletingId] = useState<string>()
   useEffect(() => {
     const controller = new AbortController()
     void apiGet('/api/mistakes', mistakeListSchema, controller.signal)
@@ -542,6 +577,24 @@ export function MistakeReviewPage({
       setMessage(reason instanceof Error ? reason.message : '创建复测失败')
     } finally {
       setStarting(false)
+    }
+  }
+  const dismissMastered = async (item: MistakeItem) => {
+    setDeletingId(item.id)
+    setMessage('正在移除已掌握题目…')
+    try {
+      await apiDelete(
+        `/api/mistakes/${encodeURIComponent(item.id)}`,
+        unknownObjectSchema,
+        'mistake-dismiss',
+      )
+      setItems((current) => current?.filter((entry) => entry.id !== item.id))
+      setPendingDeleteId(undefined)
+      setMessage('已从巩固页移除；历史测试报告仍会保留。')
+    } catch (reason) {
+      setMessage(reason instanceof Error ? reason.message : '移除失败，请重试')
+    } finally {
+      setDeletingId(undefined)
     }
   }
   return (
@@ -577,6 +630,39 @@ export function MistakeReviewPage({
                   ? '已掌握（历史保留）'
                   : `待复习 · ${item.nextReviewDate}`}
               </span>
+              {item.status === 'mastered' &&
+                (pendingDeleteId === item.id ? (
+                  <div
+                    className="button-row"
+                    role="group"
+                    aria-label="确认移除"
+                  >
+                    <button
+                      className="button button--danger"
+                      disabled={deletingId === item.id}
+                      onClick={() => void dismissMastered(item)}
+                      type="button"
+                    >
+                      {deletingId === item.id ? '正在移除…' : '确认移除'}
+                    </button>
+                    <button
+                      className="button button--secondary"
+                      disabled={deletingId === item.id}
+                      onClick={() => setPendingDeleteId(undefined)}
+                      type="button"
+                    >
+                      取消
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    className="button button--secondary"
+                    onClick={() => setPendingDeleteId(item.id)}
+                    type="button"
+                  >
+                    不再提醒并移除
+                  </button>
+                ))}
             </li>
           ))}
         </ol>

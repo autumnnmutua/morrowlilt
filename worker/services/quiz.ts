@@ -2,6 +2,7 @@ import { getBankQuestion } from '../quiz/bank'
 import { createSeedHex, generateQuiz } from '../quiz/generator'
 import { scoreAnswer } from '../quiz/scoring'
 import type {
+  AnswerAnalysis,
   BankQuestion,
   PublicQuestion,
   QuestionType,
@@ -51,6 +52,7 @@ type QuestionRow = {
   standard_answer_json: string
   acceptable_answers_json: string
   explanation: string
+  answer_analysis_json: string
   tags_json: string
   difficulty: 'C1' | 'C2'
   theme: string
@@ -75,6 +77,7 @@ type MistakeRow = {
   mastery: number
   next_review_date: string
   mastered_at: string | null
+  dismissed_at: string | null
 }
 
 function parseArray(value: string): string[] {
@@ -83,6 +86,38 @@ function parseArray(value: string): string[] {
     parsed.every((item) => typeof item === 'string')
     ? parsed
     : []
+}
+
+function parseAnswerAnalysis(value: string): AnswerAnalysis {
+  try {
+    const parsed: unknown = JSON.parse(value)
+    if (
+      typeof parsed === 'object' &&
+      parsed !== null &&
+      !Array.isArray(parsed) &&
+      typeof (parsed as { reasoning?: unknown }).reasoning === 'string'
+    ) {
+      const record = parsed as {
+        reasoning: string
+        optionReasons?: unknown
+      }
+      const optionReasons =
+        typeof record.optionReasons === 'object' &&
+        record.optionReasons !== null &&
+        !Array.isArray(record.optionReasons)
+          ? Object.fromEntries(
+              Object.entries(record.optionReasons).filter(
+                (entry): entry is [string, string] =>
+                  typeof entry[1] === 'string',
+              ),
+            )
+          : undefined
+      return { reasoning: record.reasoning, optionReasons }
+    }
+  } catch {
+    // Older rows fall back to the stored explanation below.
+  }
+  return { reasoning: '结合词义、语法结构和上下文判断答案。' }
 }
 
 function publicQuestion(row: QuestionRow): PublicQuestion {
@@ -101,6 +136,7 @@ function bankQuestion(row: QuestionRow): BankQuestion {
     standardAnswer: String(JSON.parse(row.standard_answer_json)),
     acceptableAnswers: parseArray(row.acceptable_answers_json),
     explanation: row.explanation,
+    answerAnalysis: parseAnswerAnalysis(row.answer_analysis_json),
     errorReason:
       row.question_type === 'spelling'
         ? 'spelling_error'
@@ -121,6 +157,7 @@ async function getQuestions(
     .prepare(
       `SELECT id, bank_question_id, ordinal, question_type, public_json,
               standard_answer_json, acceptable_answers_json, explanation,
+              answer_analysis_json,
               tags_json, difficulty, theme, source
        FROM quiz_session_questions WHERE session_id = ? ORDER BY ordinal`,
     )
@@ -198,22 +235,24 @@ export async function createQuizSession(input: {
     .first<SessionRow>()
   if (existing) return sessionView(input.db, existing)
 
-  const recentResult = await input.db
-    .prepare(
-      `SELECT question_fingerprint FROM quiz_sessions
-       WHERE profile_id = ? AND status IN ('in_progress', 'completed')
-       ORDER BY started_at DESC LIMIT 20`,
-    )
-    .bind(input.profileId)
-    .all<{ question_fingerprint: string }>()
-  const mistakeResult = await input.db
-    .prepare(
-      `SELECT bank_question_id FROM mistake_book
-       WHERE profile_id = ? AND status = 'active'
-       ORDER BY next_review_date, last_reviewed_at LIMIT 30`,
-    )
-    .bind(input.profileId)
-    .all<{ bank_question_id: string }>()
+  const [recentResult, mistakeResult] = await Promise.all([
+    input.db
+      .prepare(
+        `SELECT question_fingerprint FROM quiz_sessions
+         WHERE profile_id = ? AND status IN ('in_progress', 'completed')
+         ORDER BY started_at DESC LIMIT 20`,
+      )
+      .bind(input.profileId)
+      .all<{ question_fingerprint: string }>(),
+    input.db
+      .prepare(
+        `SELECT bank_question_id FROM mistake_book
+         WHERE profile_id = ? AND status = 'active' AND dismissed_at IS NULL
+         ORDER BY next_review_date, last_reviewed_at LIMIT 30`,
+      )
+      .bind(input.profileId)
+      .all<{ bank_question_id: string }>(),
+  ])
   const seedHex = input.seedHex ?? createSeedHex()
   const generated = await generateQuiz({
     seedHex,
@@ -276,8 +315,8 @@ export async function createQuizSession(input: {
           `INSERT INTO quiz_session_questions (
             id, session_id, bank_question_id, ordinal, question_type, public_json,
             standard_answer_json, acceptable_answers_json, explanation, tags_json,
-            difficulty, theme, source, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            answer_analysis_json, difficulty, theme, source, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         )
         .bind(
           crypto.randomUUID(),
@@ -290,6 +329,7 @@ export async function createQuizSession(input: {
           JSON.stringify(question.acceptableAnswers),
           question.explanation,
           JSON.stringify(question.tags),
+          JSON.stringify(question.answerAnalysis),
           question.difficulty,
           question.theme,
           question.source,
@@ -371,6 +411,7 @@ export async function submitQuizAnswer(input: {
     .prepare(
       `SELECT id, bank_question_id, ordinal, question_type, public_json,
               standard_answer_json, acceptable_answers_json, explanation,
+              answer_analysis_json,
               tags_json, difficulty, theme, source
        FROM quiz_session_questions WHERE id = ? AND session_id = ? LIMIT 1`,
     )
@@ -461,17 +502,41 @@ async function buildReport(
   )
   const items: QuizReportItem[] = questions.map((question) => {
     const answer = answerMap.get(question.id)
+    const visible = publicQuestion(question)
+    const analysis = parseAnswerAnalysis(question.answer_analysis_json)
+    const rawResponse = answer ? String(JSON.parse(answer.response_json)) : ''
+    const rawStandardAnswer = String(JSON.parse(question.standard_answer_json))
+    const selectedOption = visible.options?.find(
+      (option) => option.id === rawResponse,
+    )
+    const correctOption = visible.options?.find(
+      (option) => option.id === rawStandardAnswer,
+    )
+    const responseExplanation = selectedOption
+      ? (analysis.optionReasons?.[selectedOption.id] ?? analysis.reasoning)
+      : answer?.is_correct === 1
+        ? `你的答案符合可接受答案。${analysis.reasoning}`
+        : `“${rawResponse || '未作答'}”未满足本题要求。${analysis.reasoning}`
+    const eliminationSteps =
+      visible.options
+        ?.filter((option) => option.id !== rawStandardAnswer)
+        .map(
+          (option) =>
+            `${option.label}：${analysis.optionReasons?.[option.id] ?? '与题干语义、语法结构或固定搭配不一致。'}`,
+        ) ?? []
     return {
       questionId: question.id,
       bankQuestionId: question.bank_question_id,
       ordinal: question.ordinal,
       type: question.question_type,
-      prompt: publicQuestion(question).prompt,
+      prompt: visible.prompt,
       theme: question.theme,
-      response: answer ? String(JSON.parse(answer.response_json)) : '',
-      standardAnswer: String(JSON.parse(question.standard_answer_json)),
+      response: selectedOption?.label ?? rawResponse,
+      standardAnswer: correctOption?.label ?? rawStandardAnswer,
       acceptableAnswers: parseArray(question.acceptable_answers_json),
       explanation: question.explanation,
+      responseExplanation,
+      eliminationSteps,
       isCorrect: answer?.is_correct === 1,
       score: answer?.score ?? 0,
       durationMs: answer?.duration_ms ?? 0,
@@ -524,15 +589,28 @@ async function updateMistakes(
   businessDate: string,
 ): Promise<void> {
   const now = new Date().toISOString()
+  const bankQuestionIds = [
+    ...new Set(report.items.map((item) => item.bankQuestionId)),
+  ]
+  const placeholders = bankQuestionIds.map(() => '?').join(', ')
+  const existingRows = bankQuestionIds.length
+    ? await db
+        .prepare(
+          `SELECT id, bank_question_id, status, error_count, correct_streak,
+                  mastery, next_review_date, mastered_at, dismissed_at
+           FROM mistake_book
+           WHERE profile_id = ? AND bank_question_id IN (${placeholders})`,
+        )
+        .bind(profileId, ...bankQuestionIds)
+        .all<MistakeRow>()
+    : { results: [] as MistakeRow[] }
+  const existingByQuestion = new Map(
+    existingRows.results.map((row) => [row.bank_question_id, row]),
+  )
+  const statements: D1PreparedStatement[] = []
   for (const item of report.items) {
-    const existing = await db
-      .prepare(
-        `SELECT id, bank_question_id, status, error_count, correct_streak,
-                mastery, next_review_date, mastered_at
-         FROM mistake_book WHERE profile_id = ? AND bank_question_id = ? LIMIT 1`,
-      )
-      .bind(profileId, item.bankQuestionId)
-      .first<MistakeRow>()
+    const existing = existingByQuestion.get(item.bankQuestionId)
+    if (item.isCorrect && existing?.dismissed_at) continue
     if (item.isCorrect && !existing) continue
     const mistakeId = existing?.id ?? crypto.randomUUID()
     const before = existing?.mastery ?? 35
@@ -541,19 +619,19 @@ async function updateMistakes(
       ? Math.min(100, before + 25)
       : Math.max(0, before - 15)
     const mastered = item.isCorrect && streak >= 2 && after >= masteryThreshold
-    await db.batch([
+    statements.push(
       db
         .prepare(
           `INSERT INTO mistake_book (
              id, profile_id, bank_question_id, status, error_count,
              correct_streak, mastery, first_wrong_at, last_reviewed_at,
-             next_review_date, mastered_at
-           ) VALUES (?, ?, ?, 'active', 1, 0, ?, ?, ?, date(?, '+1 day'), NULL)
+             next_review_date, mastered_at, dismissed_at
+           ) VALUES (?, ?, ?, 'active', 1, 0, ?, ?, ?, date(?, '+1 day'), NULL, NULL)
            ON CONFLICT(profile_id, bank_question_id) DO UPDATE SET
              status = ?,
              error_count = mistake_book.error_count + ?,
              correct_streak = ?, mastery = ?, last_reviewed_at = ?,
-             next_review_date = date(?, ?), mastered_at = ?`,
+             next_review_date = date(?, ?), mastered_at = ?, dismissed_at = NULL`,
         )
         .bind(
           mistakeId,
@@ -587,8 +665,9 @@ async function updateMistakes(
           after,
           now,
         ),
-    ])
+    )
   }
+  if (statements.length > 0) await db.batch(statements)
 }
 
 export async function completeQuizSession(input: {
@@ -669,8 +748,8 @@ export async function listMistakes(db: D1Database, profileId: string) {
   const result = await db
     .prepare(
       `SELECT id, bank_question_id, status, error_count, correct_streak,
-              mastery, next_review_date, mastered_at
-       FROM mistake_book WHERE profile_id = ?
+              mastery, next_review_date, mastered_at, dismissed_at
+       FROM mistake_book WHERE profile_id = ? AND dismissed_at IS NULL
        ORDER BY status, next_review_date, last_reviewed_at DESC`,
     )
     .bind(profileId)
@@ -689,6 +768,29 @@ export async function listMistakes(db: D1Database, profileId: string) {
       nextReviewDate: row.next_review_date,
     }
   })
+}
+
+export async function dismissMasteredMistake(input: {
+  db: D1Database
+  profileId: string
+  mistakeId: string
+}): Promise<{ dismissed: true }> {
+  const result = await input.db
+    .prepare(
+      `UPDATE mistake_book SET dismissed_at = ?
+       WHERE id = ? AND profile_id = ? AND status = 'mastered'
+         AND dismissed_at IS NULL`,
+    )
+    .bind(new Date().toISOString(), input.mistakeId, input.profileId)
+    .run()
+  if (result.meta.changes !== 1) {
+    throw new QuizDomainError(
+      'MISTAKE_NOT_DISMISSIBLE',
+      'Mastered mistake was not found',
+      404,
+    )
+  }
+  return { dismissed: true }
 }
 
 export function normalizeQuizSettings(value: {

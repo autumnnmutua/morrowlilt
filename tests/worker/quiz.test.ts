@@ -12,6 +12,7 @@ import { ensureAppProfile } from '../../worker/services/learning'
 import {
   completeQuizSession,
   createQuizSession,
+  dismissMasteredMistake,
   getActiveQuizSession,
   getQuizReport,
   listMistakes,
@@ -88,6 +89,19 @@ describe('quiz generator and scoring', () => {
     ).toBe(false)
   })
 
+  it('makes every cloze question a bounded four-option choice', () => {
+    const clozeQuestions = questionBank.filter(
+      (question) => question.type === 'cloze',
+    )
+    expect(clozeQuestions.length).toBeGreaterThan(0)
+    expect(
+      clozeQuestions.every(
+        (question) =>
+          question.inputMode === 'choice' && question.options?.length === 4,
+      ),
+    ).toBe(true)
+  })
+
   it('uses 256-bit Web Crypto seeds and reproduces the same ordered set', async () => {
     expect(createSeedHex()).toMatch(/^[0-9a-f]{64}$/)
     const input = {
@@ -162,7 +176,7 @@ describe('quiz sessions, reports, and mistake mastery', () => {
     const body = await response.json<{ data: { questions: unknown[] } }>()
     expect(body.data.questions).toHaveLength(6)
     expect(JSON.stringify(body)).not.toMatch(
-      /standardAnswer|acceptableAnswers|explanation/i,
+      /standardAnswer|acceptableAnswers|explanation|answerAnalysis/i,
     )
 
     const resumed = await exports.default.fetch(
@@ -192,7 +206,7 @@ describe('quiz sessions, reports, and mistake mastery', () => {
       })
       sessions.push(session)
       expect(JSON.stringify(session)).not.toMatch(
-        /standardAnswer|acceptableAnswers|explanation/i,
+        /standardAnswer|acceptableAnswers|explanation|answerAnalysis/i,
       )
       reports.push(
         await answerSession(
@@ -210,6 +224,11 @@ describe('quiz sessions, reports, and mistake mastery', () => {
     expect(reports[1].byTheme.length).toBeGreaterThanOrEqual(3)
     expect(reports[1].totalDurationMs).toBe(9_750)
     expect(reports[2].weaknesses.length).toBeGreaterThan(0)
+    const wrongChoice = reports[2].items.find(
+      (item) => item.eliminationSteps.length > 0,
+    )
+    expect(wrongChoice?.responseExplanation).toContain('definitely-wrong')
+    expect(wrongChoice?.eliminationSteps).toHaveLength(3)
   })
 
   it('makes creation and answer submission idempotent and resumes midway', async () => {
@@ -297,6 +316,24 @@ describe('quiz sessions, reports, and mistake mastery', () => {
       .bind(firstMistake.id)
       .first<{ count: number }>()
     expect(history?.count).toBe(4)
+
+    await dismissMasteredMistake({
+      db: env.DB,
+      profileId,
+      mistakeId: firstMistake.id,
+    })
+    expect(
+      (await listMistakes(env.DB, profileId)).some(
+        (item) => item.id === firstMistake.id,
+      ),
+    ).toBe(false)
+    await expect(
+      dismissMasteredMistake({
+        db: env.DB,
+        profileId: await profile('other-owner'),
+        mistakeId: firstMistake.id,
+      }),
+    ).rejects.toMatchObject({ code: 'MISTAKE_NOT_DISMISSIBLE', status: 404 })
   })
 
   it('returns the same completed report without applying mastery twice', async () => {
