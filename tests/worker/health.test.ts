@@ -21,6 +21,24 @@ describe('Worker API and D1 integration', () => {
     })
   })
 
+  it('checks health without provisioning a user account', async () => {
+    const subject = `health-only-${crypto.randomUUID()}`
+    const response = await exports.default.fetch(
+      new Request('https://example.invalid/api/health', {
+        headers: { 'x-morrowlilt-test-subject': subject },
+      }),
+    )
+
+    expect(response.status).toBe(200)
+    const identity = await env.DB.prepare(
+      `SELECT id FROM auth_identities
+       WHERE issuer = 'https://local.invalid' AND subject = ?`,
+    )
+      .bind(subject)
+      .first()
+    expect(identity).toBeNull()
+  })
+
   it('persists seed content before returning it and keeps the snapshot stable', async () => {
     const url = 'https://example.invalid/api/daily-content?date=2026-08-20'
     const first = await exports.default.fetch(new Request(url))

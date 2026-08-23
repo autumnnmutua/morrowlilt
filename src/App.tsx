@@ -16,8 +16,8 @@ import type {
   TodayData,
   TodayViewState,
 } from './types'
-import { apiGet, apiGetRaw, apiMutation } from './lib/api'
-import { healthSchema, todaySchema } from './lib/schemas'
+import { apiGet, apiMutation } from './lib/api'
+import { todaySchema } from './lib/schemas'
 
 function App() {
   const requestedPage = new URL(window.location.href).searchParams.get('view')
@@ -41,23 +41,6 @@ function App() {
   const [mutationMessage, setMutationMessage] = useState('')
   const [theme, setTheme] = useState<ThemeChoice>('system')
 
-  useEffect(() => {
-    const controller = new AbortController()
-
-    async function checkHealth() {
-      try {
-        await apiGetRaw('/api/health', healthSchema, controller.signal)
-        setHealth('ready')
-      } catch (error) {
-        if (error instanceof DOMException && error.name === 'AbortError') return
-        setHealth('unavailable')
-      }
-    }
-
-    void checkHealth()
-    return () => controller.abort()
-  }, [])
-
   const loadToday = async (signal?: AbortSignal) => {
     setTodayState({ status: 'loading' })
     try {
@@ -68,8 +51,10 @@ function App() {
         30_000,
       )
       setTodayState({ status: 'ready', data })
+      setHealth('ready')
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
+      setHealth('unavailable')
       setTodayState({
         status: 'error',
         message: error instanceof Error ? error.message : '今日内容暂时不可用',
@@ -80,9 +65,13 @@ function App() {
   useEffect(() => {
     const controller = new AbortController()
     void apiGet('/api/today', todaySchema, controller.signal, 30_000)
-      .then((data) => setTodayState({ status: 'ready', data }))
+      .then((data) => {
+        setTodayState({ status: 'ready', data })
+        setHealth('ready')
+      })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return
+        setHealth('unavailable')
         setTodayState({
           status: 'error',
           message:

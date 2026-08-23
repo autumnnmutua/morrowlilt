@@ -83,6 +83,41 @@ describe('learning progress invariants', () => {
     ])
   })
 
+  it('reuses an existing backlog with only the progress and range reads', async () => {
+    const id = await createProfile('cached-backlog', '2026-08-20')
+    const initial = await getPendingBundle({
+      db: env.DB,
+      profileId: id,
+      today: '2026-08-22',
+    })
+    let prepareCount = 0
+    const countingDb = new Proxy(env.DB, {
+      get(target, property) {
+        if (property === 'prepare') {
+          return (query: string) => {
+            prepareCount += 1
+            return target.prepare(query)
+          }
+        }
+        throw new TypeError(`Unexpected D1 property: ${String(property)}`)
+      },
+    })
+
+    const repeated = await getPendingBundle({
+      db: countingDb,
+      profileId: id,
+      today: '2026-08-22',
+      profile: initial.profile,
+    })
+
+    expect(repeated.days.map((day) => day.contentDate)).toEqual([
+      '2026-08-20',
+      '2026-08-21',
+      '2026-08-22',
+    ])
+    expect(prepareCount).toBe(2)
+  })
+
   it('settles the whole bundle and starts with only new content next day', async () => {
     const id = await createProfile('next-day', '2026-08-20')
     await markLearned({
