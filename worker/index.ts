@@ -194,6 +194,7 @@ async function getTodayPayload(env: Env, profileId: string) {
     profileId: profile.id,
     today,
     onlineProvider,
+    profile,
   })
   const todayContent =
     bundle.days.find((day) => day.contentDate === today) ??
@@ -1104,6 +1105,9 @@ export default {
       if (pathname.startsWith('/api/')) {
         const identity = await requireAccessAuthorization(request, env)
         requireSameOriginMutation(request)
+        if (pathname === '/api/health') {
+          return await routeApi(request, env)
+        }
         let account
         try {
           account = await ensureAccountForIdentity({

@@ -24,6 +24,8 @@ React、同源 Worker API 与本地 D1 会由 Cloudflare Vite 插件一起启动
 
 先在自己的 Cloudflare Zero Trust 中创建 Access 应用和仅允许目标身份的策略，再把 team domain 与 application audience 作为 Worker Secret 配置。Cron 的 `scheduled()` 不依赖浏览器 Cookie。
 
+单域名站点建议把 Access 应用的 Cookie SameSite 设为 `Lax`，并关闭多域名场景使用的 eager redirect。`Strict` 可能使移动浏览器在一次性验证码登录后无法携带授权 Cookie，从而出现重复重定向。仍建议保留 HttpOnly 与绑定 Cookie。
+
 ## 3. 创建 Cloudflare 资源
 
 复制 `wrangler.example.jsonc` 为被忽略的 `wrangler.production.private.jsonc`，替换全部 `<PLACEHOLDER>`。不要修改公共示例来保存真实 ID。
@@ -50,7 +52,7 @@ Remove-Item Env:CLOUDFLARE_DEPLOY_CONFIG
 pnpm exec wrangler deploy --config dist/daily_english_study/wrangler.json
 ```
 
-远程 D1 必须依次应用 `0001`–`0015`。资源名称、数据库 ID、账号 ID、Access audience 和站点 URL只能进入私有配置或 Cloudflare 控制台。
+远程 D1 必须依次应用仓库中全部 migration。资源名称、数据库 ID、账号 ID、Access audience 和站点 URL只能进入私有配置或 Cloudflare 控制台。
 
 ## 4. 必要 Secret
 

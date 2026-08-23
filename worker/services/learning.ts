@@ -146,6 +146,7 @@ export async function getPendingBundle(input: {
   profileId: string
   today: string
   onlineProvider?: ContentProvider
+  profile?: AppProfile
 }): Promise<PendingBundle> {
   if (!isContentDate(input.today)) {
     throw new LearningDomainError(
@@ -154,11 +155,15 @@ export async function getPendingBundle(input: {
       400,
     )
   }
-  const profile = await getProfile(input.db, input.profileId)
+  const [profile, progress] = await Promise.all([
+    input.profile
+      ? Promise.resolve(input.profile)
+      : getProfile(input.db, input.profileId),
+    getLearningProgress(input.db, input.profileId),
+  ])
   if (!profile) {
     throw new LearningDomainError('PROFILE_NOT_FOUND', 'Profile not found', 404)
   }
-  const progress = await getLearningProgress(input.db, input.profileId)
   if (input.today < profile.createdDate) {
     throw new LearningDomainError(
       'DATE_BEFORE_PROFILE',
@@ -171,7 +176,16 @@ export async function getPendingBundle(input: {
     progress.settledThroughDate,
     input.today,
   )
-  for (const contentDate of pendingDates) {
+  const existingDays = await listProfileDailyContentRange(
+    input.db,
+    input.profileId,
+    progress.settledThroughDate,
+    input.today,
+  )
+  const existingDates = new Set(existingDays.map((day) => day.contentDate))
+  const missingDates = pendingDates.filter((date) => !existingDates.has(date))
+
+  for (const contentDate of missingDates) {
     await ensureProfileDailyContent({
       db: input.db,
       profileId: input.profileId,
@@ -181,12 +195,15 @@ export async function getPendingBundle(input: {
     })
   }
 
-  const days = await listProfileDailyContentRange(
-    input.db,
-    input.profileId,
-    progress.settledThroughDate,
-    input.today,
-  )
+  const days =
+    missingDates.length === 0
+      ? existingDays
+      : await listProfileDailyContentRange(
+          input.db,
+          input.profileId,
+          progress.settledThroughDate,
+          input.today,
+        )
   return {
     profile,
     progress,
