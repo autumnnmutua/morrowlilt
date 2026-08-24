@@ -1,7 +1,7 @@
 {
   "name": "morrowlilt-self-hosted",
   "private": true,
-  "version": "1.2.0",
+  "version": "1.3.0",
   "type": "module",
   "packageManager": "pnpm@11.19.0",
   "scripts": {
@@ -20,6 +20,7 @@
     "license:check": "node scripts/check-licenses.mjs",
     "db:migrate:local": "wrangler d1 migrations apply morrowlilt-local --local",
     "dictionary:build-wordnet": "node scripts/build-wordnet-sql.mjs",
+    "dictionary:build-exams": "node scripts/build-exam-dictionary-sql.mjs",
     "cron:test:local": "curl http://localhost:5173/cdn-cgi/handler/scheduled?format=json",
     "check": "pnpm run format:check && pnpm run lint && pnpm run cf-typegen:check && pnpm run typecheck && pnpm run test && pnpm run build && pnpm run license:check && pnpm run scan:public",
     "deploy": "pnpm run build && wrangler deploy",

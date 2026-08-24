@@ -64,3 +64,25 @@ export type DictionarySuggestions = {
   suggestions: string[]
   source: 'local' | 'mixed'
 }
+
+export type ExamDictionaryList = {
+  slug: string
+  name: string
+  shortName: string
+  description: string
+  source: { name: string; url: string; license: string }
+  entryCount: number
+  letterCounts: Record<string, number>
+  updatedAt: string
+}
+
+export type ExamDictionaryCatalog = { lists: ExamDictionaryList[] }
+
+export type ExamDictionaryPage = {
+  list: ExamDictionaryList
+  letter: string
+  letterEntryCount: number
+  words: Array<{ word: string; normalizedWord: string; rank: number }>
+  hasMore: boolean
+  nextCursor?: string
+}

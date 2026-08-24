@@ -13,6 +13,7 @@ import {
   dictionarySuggestionsSchema,
   unknownObjectSchema,
 } from '../lib/schemas'
+import { ExamDictionaryBrowser } from './ExamDictionaryBrowser'
 
 function SourceLicense({ license }: { license?: DictionaryLicense }) {
   if (!license) return <span>暂无许可信息</span>
@@ -27,7 +28,7 @@ function SourceLicense({ license }: { license?: DictionaryLicense }) {
 
 function GeneratedField({ field }: { field: DictionaryGeneratedField }) {
   const labels = {
-    translated: '中文补充',
+    translated: '中文释义',
     ai_assisted: '学习补充',
     original: '学习补充',
   }
@@ -390,6 +391,17 @@ export function DictionaryExperience() {
           </button>
         </div>
       </form>
+      <ExamDictionaryBrowser
+        onSelectWord={(word) => {
+          setQuery(word)
+          void search(word)
+          window.requestAnimationFrame(() => {
+            document
+              .querySelector<HTMLElement>('#dictionary-lookup-status')
+              ?.scrollIntoView?.({ behavior: 'smooth', block: 'start' })
+          })
+        }}
+      />
       {history.length > 0 && (
         <nav aria-label="最近搜索" className="dictionary-history">
           <span>最近搜索</span>
@@ -410,6 +422,7 @@ export function DictionaryExperience() {
       <p
         aria-live="polite"
         className={`answer-status${status === 'error' ? ' answer-status--error' : ''}`}
+        id="dictionary-lookup-status"
         role={status === 'error' ? 'alert' : 'status'}
       >
         {message}

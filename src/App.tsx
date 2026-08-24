@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import './App.css'
 import { AppShell } from './components/AppShell'
 import {
@@ -7,7 +7,6 @@ import {
   QuizExperience,
 } from './components/QuizExperience'
 import { LearningPage, SettingsPage, TodayPage } from './pages/Pages'
-import { DictionaryExperience } from './components/DictionaryExperience'
 import type {
   HealthState,
   PageId,
@@ -18,6 +17,11 @@ import type {
 } from './types'
 import { apiGet, apiMutation } from './lib/api'
 import { todaySchema } from './lib/schemas'
+
+const DictionaryExperience = lazy(async () => {
+  const module = await import('./components/DictionaryExperience')
+  return { default: module.DictionaryExperience }
+})
 
 function App() {
   const requestedPage = new URL(window.location.href).searchParams.get('view')
@@ -183,7 +187,17 @@ function App() {
     ),
     quiz: <QuizExperience onNavigate={navigate} />,
     report: <LatestReportPage onNavigate={navigate} />,
-    dictionary: <DictionaryExperience />,
+    dictionary: (
+      <Suspense
+        fallback={
+          <div aria-live="polite" className="page page--reading" role="status">
+            正在加载词典…
+          </div>
+        }
+      >
+        <DictionaryExperience />
+      </Suspense>
+    ),
     review: <MistakeReviewPage onNavigate={navigate} />,
     settings: <SettingsPage onThemeChange={setTheme} theme={theme} />,
   }

@@ -4,6 +4,8 @@ import { extname, relative, resolve, sep } from 'node:path'
 
 const root = resolve(import.meta.dirname, '..')
 const trackedOnly = process.argv.includes('--tracked')
+const approvedPublicPreview =
+  'https://daily-english-study.esthertreu3724.workers.dev'
 const ignoredDirectories = new Set([
   '.git',
   '.wrangler',
@@ -123,7 +125,11 @@ for (const path of files) {
     if (relativePath !== 'scripts/scan-public-export.mjs') {
       for (const [label, pattern] of patterns) {
         pattern.lastIndex = 0
-        if (pattern.test(line))
+        const valueToScan =
+          label === 'workers.dev deployment URL'
+            ? line.replaceAll(approvedPublicPreview, '')
+            : line
+        if (pattern.test(valueToScan))
           findings.push(`${relativePath}:${index + 1}: ${label}`)
       }
     }

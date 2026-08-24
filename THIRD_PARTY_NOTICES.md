@@ -22,6 +22,20 @@ Before a public or commercial release, re-check the Provider's current operating
 
 The production D1 lexicon is built from the official 2025 WNDB release. It provides a licensed local fallback with nouns, verbs, adjectives, adverbs, senses, examples, synonyms and exception forms. Generated import SQL and downloaded archives remain in the ignored `private/` directory; the repository includes only the schema and reproducible importer. User-visible results preserve the resource name, source URL and license.
 
+## ECDICT
+
+- Project: ECDICT
+- Source repository: <https://github.com/skywind3000/ECDICT>
+- Repository license: MIT
+
+ECDICT supplies the optional exam-list tags, English and Chinese dictionary text, phonetics, part-of-speech statistics and inflection exchange field. The repository includes a generic importer but does not vendor the 60+ MB CSV or generated D1 SQL. Deployments that import the data retain the project name, source URL and license in the D1 metadata and user-visible source field.
+
+## Exam-list headword sources and Academic Word List
+
+TEM-4, TEM-8, SAT and GMAT headword manifests can be prepared from the GPL-3.0 Qwerty Learner project at <https://github.com/RealKai42/qwerty-learner>. These external files and generated SQL are not redistributed in this MIT repository. ECDICT remains the source of displayed bilingual lexical data.
+
+The AWL catalog represents the 570 word-family headwords developed by Averil Coxhead. The project records the Academic Word List attribution and source page at <https://www.eapfoundation.com/vocab/academic/awllists/>; it does not copy third-party explanatory prose or examples.
+
 ## Datamuse API
 
 - Service: Datamuse word-finding and suggestion API
