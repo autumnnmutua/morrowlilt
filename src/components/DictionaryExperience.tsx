@@ -149,7 +149,7 @@ function partOfSpeechLabel(label: string): string {
 export function DictionaryExperience() {
   const [query, setQuery] = useState('resilient')
   const [status, setStatus] = useState<
-    'idle' | 'loading' | 'ready' | 'empty' | 'error'
+    'idle' | 'loading' | 'enriching' | 'ready' | 'empty' | 'error'
   >('idle')
   const [result, setResult] = useState<DictionaryResult>()
   const [history, setHistory] = useState<DictionaryHistoryItem[]>([])
@@ -231,9 +231,27 @@ export function DictionaryExperience() {
     setStatus('loading')
     setSaveMessage('')
     setMessage('正在通过本站服务查询并检查 D1 缓存…')
+    let preview: DictionaryResult | undefined
+    const encodedTerm = encodeURIComponent(term)
+    try {
+      preview = await apiGet(
+        `/api/dictionary?term=${encodedTerm}&mode=quick`,
+        dictionaryResultSchema,
+        controller.signal,
+        4_000,
+      )
+      setResult(preview)
+      setQuery(preview.normalizedTerm)
+      setSuggestionsOpen(false)
+      setStatus('enriching')
+      setMessage('已显示本地中文词条，正在补充在线释义、发音和例句…')
+    } catch (error) {
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      // A local preview is optional; the complete Provider lookup continues.
+    }
     try {
       const data: DictionaryResult = await apiGet(
-        `/api/dictionary?term=${encodeURIComponent(term)}`,
+        `/api/dictionary?term=${encodedTerm}`,
         dictionaryResultSchema,
         controller.signal,
         25_000,
@@ -250,6 +268,12 @@ export function DictionaryExperience() {
       void loadHistory()
     } catch (error) {
       if (error instanceof DOMException && error.name === 'AbortError') return
+      if (preview) {
+        setStatus('ready')
+        setMessage('已显示本地完整中文词条；在线发音与例句暂未更新。')
+        void loadHistory()
+        return
+      }
       if (error instanceof ApiError && error.code === 'DICTIONARY_NOT_FOUND') {
         setResult(undefined)
         setStatus('empty')
@@ -283,7 +307,7 @@ export function DictionaryExperience() {
   }
 
   return (
-    <div className="page page--reading">
+    <div className="page page--reading page--dictionary">
       <header className="page-heading">
         <p className="eyebrow">查词与例句</p>
         <h1>词典</h1>
@@ -384,13 +408,42 @@ export function DictionaryExperience() {
           </div>
           <button
             className="button button--primary"
-            disabled={status === 'loading'}
+            disabled={status === 'loading' || status === 'enriching'}
             type="submit"
           >
-            {status === 'loading' ? '查询中…' : '搜索'}
+            {status === 'loading'
+              ? '查询中…'
+              : status === 'enriching'
+                ? '补充中…'
+                : '搜索'}
           </button>
         </div>
       </form>
+      {history.length > 0 && (
+        <section
+          aria-labelledby="dictionary-history-title"
+          className="dictionary-history"
+        >
+          <div className="dictionary-history__heading">
+            <h2 id="dictionary-history-title">最近搜索</h2>
+            <span>{history.length} 个词条</span>
+          </div>
+          <nav aria-label="最近搜索词条" className="dictionary-history__list">
+            {history.map((item) => (
+              <button
+                key={item.term}
+                onClick={() => {
+                  setQuery(item.term)
+                  void search(item.term)
+                }}
+                type="button"
+              >
+                {item.term}
+              </button>
+            ))}
+          </nav>
+        </section>
+      )}
       <ExamDictionaryBrowser
         onSelectWord={(word) => {
           setQuery(word)
@@ -402,23 +455,6 @@ export function DictionaryExperience() {
           })
         }}
       />
-      {history.length > 0 && (
-        <nav aria-label="最近搜索" className="dictionary-history">
-          <span>最近搜索</span>
-          {history.map((item) => (
-            <button
-              key={item.term}
-              onClick={() => {
-                setQuery(item.term)
-                void search(item.term)
-              }}
-              type="button"
-            >
-              {item.term}
-            </button>
-          ))}
-        </nav>
-      )}
       <p
         aria-live="polite"
         className={`answer-status${status === 'error' ? ' answer-status--error' : ''}`}
@@ -442,7 +478,7 @@ export function DictionaryExperience() {
           <p>没有找到可用词条，请检查拼写或尝试其他表达。</p>
         </section>
       )}
-      {status === 'ready' && result && (
+      {(status === 'ready' || status === 'enriching') && result && (
         <section aria-label={`${result.normalizedTerm} 的词典结果`}>
           <div className="dictionary-result-toolbar">
             <span
@@ -490,6 +526,12 @@ export function DictionaryExperience() {
                   <h2>{entry.headword}</h2>
                   {entry.phonetic && (
                     <p className="phonetic">{entry.phonetic}</p>
+                  )}
+                  {entry.chineseSummary && (
+                    <p className="dictionary-chinese-summary">
+                      <strong>中文释义</strong>
+                      <span>{entry.chineseSummary}</span>
+                    </p>
                   )}
                 </div>
                 <span className="status-tag status-tag--neutral">

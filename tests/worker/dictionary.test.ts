@@ -401,6 +401,9 @@ describe('exam dictionary catalog and A–Z browser', () => {
     expect(
       result.entries[0].partsOfSpeech[0].senses[0].translatedDefinition?.text,
     ).toBe('仔细检查')
+    expect(result.entries[0].chineseSummary).toBe(
+      'v.仔细检查；n.仔细检查；审查',
+    )
     expect(result.entries[0].inflections.map((item) => item.label)).toEqual([
       '过去式',
       '过去分词',
@@ -408,6 +411,35 @@ describe('exam dictionary catalog and A–Z browser', () => {
       '第三人称单数',
     ])
     expect(translationProvider.calls).toEqual([])
+  })
+
+  it('returns a local-first preview without calling the online Provider or writing history', async () => {
+    const profileId = await profile('dictionary-quick-preview')
+    const normalizedWord = 'quickpreviewtest'
+    await env.DB.prepare(
+      `INSERT OR REPLACE INTO dictionary_exam_lexemes
+       (normalized_word, display_word, phonetic, english_definition,
+        chinese_translation, parts_of_speech, exchange, source_name,
+        source_url, source_license, updated_at)
+       VALUES (?, ?, 'test', 'v. to preview', 'v. 预览', 'v:100', '',
+               'ECDICT', 'https://github.com/skywind3000/ECDICT',
+               'MIT', CURRENT_TIMESTAMP)`,
+    )
+      .bind(normalizedWord, normalizedWord)
+      .run()
+    const provider = new SequenceDictionaryProvider()
+    const result = await lookupDictionary({
+      db: env.DB,
+      profileId,
+      provider,
+      rawTerm: normalizedWord,
+      quick: true,
+    })
+
+    expect(result.warningCode).toBe('DICTIONARY_LOCAL_PREVIEW')
+    expect(result.entries[0].chineseSummary).toBe('v.预览')
+    expect(provider.calls).toBe(0)
+    expect(await getDictionaryHistory(env.DB, profileId)).toEqual([])
   })
 
   it('serves the catalog with browser-cache metadata', async () => {

@@ -20,6 +20,7 @@ const result: DictionaryResult = {
     {
       headword: 'resilient',
       phonetic: '/rɪˈzɪliənt/',
+      chineseSummary: 'adj.有韧性的；有弹性的',
       pronunciations: [
         {
           text: '/rɪˈzɪliənt/',
@@ -160,6 +161,19 @@ function mockHistoryAndLookup(lookup: () => Promise<Response>) {
           }),
         )
       }
+      if (url.includes('/api/dictionary?') && url.includes('mode=quick')) {
+        return Promise.resolve(
+          Response.json(
+            {
+              error: {
+                code: 'DICTIONARY_LOCAL_PREVIEW_UNAVAILABLE',
+                message: 'No local preview',
+              },
+            },
+            { status: 404 },
+          ),
+        )
+      }
       if (url.startsWith('/api/dictionary?')) return lookup()
       return Promise.resolve(Response.json({ data: { saved: true } }))
     }),
@@ -206,6 +220,7 @@ describe('DictionaryExperience', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
     expect(screen.getByRole('button', { name: '查询中…' })).toBeDisabled()
+    await waitFor(() => expect(resolveLookup).toBeDefined())
     resolveLookup?.(Response.json({ data: result }))
 
     expect(await screen.findByText('离线缓存')).toBeInTheDocument()
@@ -221,11 +236,63 @@ describe('DictionaryExperience', () => {
     expect(screen.getByText('词典收录词形')).toBeInTheDocument()
     expect(screen.getByLabelText('resilient 发音 1')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '播放发音' })).toBeInTheDocument()
+    const phonetic = document.querySelector('.dictionary-head .phonetic')
+    const chineseSummary = screen.getByText('adj.有韧性的；有弹性的')
+    expect(phonetic).not.toBeNull()
+    expect(
+      phonetic!.compareDocumentPosition(chineseSummary) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy()
 
     fireEvent.click(screen.getByRole('button', { name: '加入收藏' }))
     expect(await screen.findByText('已加入收藏。')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '加入复习队列' }))
     expect(await screen.findByText('已加入复习队列。')).toBeInTheDocument()
+  })
+
+  it('shows a local Chinese preview before the complete Provider response', async () => {
+    let resolveComplete: ((value: Response) => void) | undefined
+    vi.stubGlobal(
+      'fetch',
+      vi.fn((input: RequestInfo | URL) => {
+        const url =
+          typeof input === 'string'
+            ? input
+            : input instanceof URL
+              ? input.toString()
+              : input.url
+        if (url === '/api/dictionary/history') {
+          return Promise.resolve(Response.json({ data: [] }))
+        }
+        if (url === '/api/dictionary/exam-lists') {
+          return Promise.resolve(Response.json({ data: { lists: [] } }))
+        }
+        if (url.includes('mode=quick')) {
+          return Promise.resolve(Response.json({ data: result }))
+        }
+        if (url.startsWith('/api/dictionary?')) {
+          return new Promise<Response>((resolve) => {
+            resolveComplete = resolve
+          })
+        }
+        return Promise.resolve(Response.json({ data: {} }))
+      }),
+    )
+
+    render(<DictionaryExperience />)
+    fireEvent.click(screen.getByRole('button', { name: '搜索' }))
+
+    expect(
+      await screen.findByRole('button', { name: '补充中…' }),
+    ).toBeDisabled()
+    expect(screen.getByText('adj.有韧性的；有弹性的')).toBeInTheDocument()
+    expect(screen.getByText(/正在补充在线释义/)).toBeInTheDocument()
+
+    resolveComplete?.(
+      Response.json({ data: { ...result, cacheStatus: 'fresh' } }),
+    )
+    expect(await screen.findByText('D1 缓存')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '搜索' })).toBeEnabled()
   })
 
   it('shows an explicit empty state for a Provider 404', async () => {

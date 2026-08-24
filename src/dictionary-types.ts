@@ -23,6 +23,7 @@ export type DictionarySense = {
 export type DictionaryEntry = {
   headword: string
   phonetic?: string
+  chineseSummary?: string
   pronunciations: Array<{
     text?: string
     audioUrl?: string

@@ -127,12 +127,57 @@ function publicResult(
   }
 }
 
+const chinesePartAbbreviations: Record<string, string> = {
+  noun: 'n.',
+  verb: 'v.',
+  adjective: 'adj.',
+  adverb: 'adv.',
+  pronoun: 'pron.',
+  preposition: 'prep.',
+  conjunction: 'conj.',
+  interjection: 'interj.',
+  determiner: 'det.',
+  numeral: 'num.',
+  abbreviation: 'abbr.',
+}
+
+function withChineseSummaries(
+  result: DictionaryProviderResult,
+): DictionaryProviderResult {
+  return {
+    ...result,
+    entries: result.entries.map((entry) => {
+      const groups = entry.partsOfSpeech.flatMap((part) => {
+        const definitions = [
+          ...new Set(
+            part.senses
+              .map((sense) => sense.translatedDefinition?.text.trim())
+              .filter((text): text is string => Boolean(text))
+              .map((text) => text.replace(/[；;。，,\s]+$/u, '')),
+          ),
+        ]
+        if (definitions.length === 0) return []
+        const normalizedLabel = part.label.trim().toLowerCase()
+        const abbreviation =
+          chinesePartAbbreviations[normalizedLabel] ?? `${normalizedLabel}.`
+        return [`${abbreviation}${definitions.join('；')}`]
+      })
+      return {
+        ...entry,
+        chineseSummary: groups.length
+          ? groups.join('；')
+          : entry.chineseSummary,
+      }
+    }),
+  }
+}
+
 async function enrichWithChinese(
   db: D1Database,
   result: DictionaryProviderResult,
   provider?: DictionaryTranslationProvider,
 ): Promise<DictionaryProviderResult> {
-  if (!provider) return result
+  if (!provider) return withChineseSummaries(result)
   const texts: string[] = []
   for (const entry of result.entries) {
     for (const part of entry.partsOfSpeech) {
@@ -195,7 +240,7 @@ async function enrichWithChinese(
     )
   }
   let index = 0
-  return {
+  return withChineseSummaries({
     ...result,
     entries: result.entries.map((entry) => ({
       ...entry,
@@ -239,7 +284,7 @@ async function enrichWithChinese(
         }),
       })),
     })),
-  }
+  })
 }
 
 function mergeDictionaryResults(
@@ -333,11 +378,35 @@ export async function lookupDictionary(input: {
   provider: DictionaryProvider
   translationProvider?: DictionaryTranslationProvider
   rawTerm: string
+  quick?: boolean
   now?: number
 }): Promise<DictionaryLookupResult> {
   const normalizedTerm = normalizeDictionaryTerm(input.rawTerm)
   const now = input.now ?? Date.now()
   const searchedAt = new Date(now).toISOString()
+  if (input.quick) {
+    const [localWordNet, localExam] = await Promise.all([
+      lookupLocalLexicon(input.db, normalizedTerm),
+      lookupExamLexeme(input.db, normalizedTerm),
+    ])
+    const local = localExam
+      ? mergeDictionaryResults(localExam, localWordNet)
+      : localWordNet
+    if (!local) {
+      throw new DictionaryDomainError(
+        'DICTIONARY_LOCAL_PREVIEW_UNAVAILABLE',
+        'No local dictionary preview is available',
+        404,
+      )
+    }
+    return publicResult(
+      normalizedTerm,
+      await enrichWithChinese(input.db, local),
+      'fresh',
+      undefined,
+      'DICTIONARY_LOCAL_PREVIEW',
+    )
+  }
   const [cached, localWordNet, localExam] = await Promise.all([
     getDictionaryCache(input.db, normalizedTerm),
     lookupLocalLexicon(input.db, normalizedTerm),
