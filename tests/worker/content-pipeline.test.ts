@@ -26,6 +26,7 @@ import {
   insertDailyContent,
 } from '../../worker/repository/daily-content'
 import { ensureDailyContent } from '../../worker/services/daily-content'
+import { enrichDailyContentsVocabulary } from '../../worker/services/vocabulary-enrichment'
 
 beforeEach(async () => {
   await env.DB.batch([
@@ -95,6 +96,68 @@ function distinctOnlineCandidate(contentDate: string): DailyContentCandidate {
     'Researchers should publish uncertain findings before all available evidence has been collected. Discuss the benefits and risks.'
   return candidate
 }
+
+it('enriches daily vocabulary with every local part of speech using compact labels', async () => {
+  const normalizedWord = `dailyword${crypto.randomUUID().replaceAll('-', '')}`
+  await env.DB.prepare(
+    `INSERT INTO dictionary_exam_lexemes
+       (normalized_word, display_word, phonetic, english_definition,
+        chinese_translation, parts_of_speech, exchange, source_name,
+        source_url, source_license, updated_at)
+       VALUES (?, ?, 'test', ?, ?, 'adj:25/n:25/vt:25/vi:25', '',
+               'ECDICT', 'https://github.com/skywind3000/ECDICT', 'MIT',
+               CURRENT_TIMESTAMP)`,
+  )
+    .bind(
+      normalizedWord,
+      normalizedWord,
+      'adj. accessible\nn. an accessible place\nvt. to make accessible\nvi. to become accessible',
+      'adj.便利可达的；易于理解的\nn.可进入的场所\nvt.使……可使用\nvi.变得可访问',
+    )
+    .run()
+  const content = await ensureDailyContent({
+    db: env.DB,
+    contentDate: '2026-09-29',
+    timeZone: 'Asia/Shanghai',
+  })
+  const fixture = {
+    ...content,
+    payload: {
+      ...content.payload,
+      vocabulary: content.payload.vocabulary.map((item, index) =>
+        index === 0
+          ? {
+              ...item,
+              term: normalizedWord,
+              partOfSpeech: 'adj.',
+              definitionZh: '便利可达的；易于理解的',
+            }
+          : item,
+      ),
+    },
+  }
+
+  const [enriched] = await enrichDailyContentsVocabulary(env.DB, [fixture])
+  expect(enriched.payload.vocabulary[0].meaningGroups).toEqual([
+    { partOfSpeech: 'adj.', meaningsZh: ['便利可达的；易于理解的'] },
+    { partOfSpeech: 'n.', meaningsZh: ['可进入的场所'] },
+    { partOfSpeech: 'vt.', meaningsZh: ['使……可使用'] },
+    { partOfSpeech: 'vi.', meaningsZh: ['变得可访问'] },
+  ])
+  expect(
+    enriched.payload.vocabulary
+      .slice(1)
+      .every(
+        (item) =>
+          item.meaningGroups?.length &&
+          item.meaningGroups.every((group) =>
+            /^(?:n|v|vt|vi|adj|adv|aux|pron|prep|conj|phr|expr|word)\.$/.test(
+              group.partOfSpeech,
+            ),
+          ),
+      ),
+  ).toBe(true)
+})
 
 class SequenceProvider implements ContentProvider {
   readonly name = 'test-online-provider'

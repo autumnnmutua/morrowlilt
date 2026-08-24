@@ -108,12 +108,20 @@ describe('quiz generator and scoring', () => {
     for (const question of questionBank) {
       for (const option of question.options ?? []) {
         const meaning = question.answerAnalysis.optionMeanings?.[option.id]
+        const original = question.answerAnalysis.optionOriginals?.[option.id]
         expect(meaning, `${question.id}/${option.id}`).toBeTruthy()
+        expect(original, `${question.id}/${option.id}`).toBeTruthy()
+        expect(original, `${question.id}/${option.id}`).not.toMatch(
+          /\p{Script=Han}/u,
+        )
         expect(meaning, `${question.id}/${option.id}`).not.toContain(
           '在本题语境中的中文含义',
         )
       }
     }
+    expect(
+      getBankQuestion('phrase-long-run')?.answerAnalysis.optionOriginals?.b,
+    ).toBe('in the long run')
   })
 
   it('uses 256-bit Web Crypto seeds and reproduces the same ordered set', async () => {
@@ -246,7 +254,10 @@ describe('quiz sessions, reports, and mistake mastery', () => {
     expect(wrongChoice?.optionAnalyses).toHaveLength(4)
     expect(
       wrongChoice?.optionAnalyses.every(
-        (option) => option.meaningZh.length > 0 && option.reason.length > 0,
+        (option) =>
+          option.originalText.length > 0 &&
+          option.meaningZh.length > 0 &&
+          option.reason.length > 0,
       ),
     ).toBe(true)
     expect(

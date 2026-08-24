@@ -73,6 +73,7 @@ import {
   getProfileDailyLearningPackage,
 } from './services/daily-package'
 import { ensureProfileDailyContent } from './services/profile-daily-content'
+import { enrichDailyContentsVocabulary } from './services/vocabulary-enrichment'
 import {
   abandonQuizSession,
   completeQuizSession,
@@ -210,8 +211,20 @@ async function getTodayPayload(env: Env, profileId: string) {
       timeZone: profile.timeZone,
       onlineProvider,
     }))
+  const uniqueContents = [
+    ...bundle.days,
+    ...(bundle.days.some((day) => day.id === todayContent.id)
+      ? []
+      : [todayContent]),
+  ]
+  const enriched = await enrichDailyContentsVocabulary(env.DB, uniqueContents)
+  const byId = new Map(enriched.map((content) => [content.id, content]))
 
-  return { ...bundle, todayContent }
+  return {
+    ...bundle,
+    days: bundle.days.map((day) => byId.get(day.id) ?? day),
+    todayContent: byId.get(todayContent.id) ?? todayContent,
+  }
 }
 
 function getIdempotencyKey(request: Request): string {

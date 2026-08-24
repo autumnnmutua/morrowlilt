@@ -55,6 +55,63 @@ function StatusTag({
   )
 }
 
+function abbreviatedPartOfSpeech(value?: string): string {
+  const normalized = value?.trim().toLowerCase() ?? ''
+  if (/\bvi\b|intransitive|不及物/.test(normalized)) return 'vi.'
+  if (/\bvt\b|transitive|及物/.test(normalized)) return 'vt.'
+  if (/\baux\b|auxiliary|助动词/.test(normalized)) return 'aux.'
+  if (/\badj\b|adjective|形容词/.test(normalized)) return 'adj.'
+  if (/\badv\b|adverb|副词/.test(normalized)) return 'adv.'
+  if (/\bpron\b|pronoun|代词/.test(normalized)) return 'pron.'
+  if (/\bprep\b|preposition|介词/.test(normalized)) return 'prep.'
+  if (/\bconj\b|conjunction|连词/.test(normalized)) return 'conj.'
+  if (/\bn\b|noun|名词/.test(normalized)) return 'n.'
+  if (/\bv\b|verb|动词/.test(normalized)) return 'v.'
+  if (/phrase|短语/.test(normalized)) return 'phr.'
+  if (/expression|表达/.test(normalized)) return 'expr.'
+  return 'word.'
+}
+
+function vocabularyMeaningGroups(item: VocabularyItem) {
+  return item.meaningGroups?.length
+    ? item.meaningGroups
+    : [
+        {
+          partOfSpeech: abbreviatedPartOfSpeech(item.partOfSpeech),
+          meaningsZh: [item.definitionZh ?? item.definition],
+        },
+      ]
+}
+
+function vocabularySummary(item: VocabularyItem): string {
+  return vocabularyMeaningGroups(item)
+    .map(
+      (group) =>
+        `${group.partOfSpeech}${group.meaningsZh
+          .map((meaning) => meaning.replace(/[；;。\s]+$/u, ''))
+          .join('；')}；`,
+    )
+    .join(' ')
+}
+
+function VocabularyMeaningList({ item }: { item: VocabularyItem }) {
+  return (
+    <dl className="vocabulary-meaning-list" aria-label="完整中文释义">
+      {vocabularyMeaningGroups(item).map((group) => (
+        <div key={`${item.term}-${group.partOfSpeech}`}>
+          <dt>{group.partOfSpeech}</dt>
+          <dd>
+            {group.meaningsZh
+              .map((meaning) => meaning.replace(/[；;。\s]+$/u, ''))
+              .join('；')}
+            ；
+          </dd>
+        </div>
+      ))}
+    </dl>
+  )
+}
+
 function LearningGroup({
   count,
   date,
@@ -223,7 +280,7 @@ export function TodayPage({
     ...content.payload.vocabulary.map((item) => ({
       kind: kindLabels[item.kind],
       term: item.term,
-      detail: `${item.partOfSpeech ?? '词汇'} · ${item.definitionZh ?? item.definition}`,
+      detail: vocabularySummary(item),
     })),
     ...(content.payload.practicalExpressions ?? []).map((item) => ({
       kind: '场景表达',
@@ -446,14 +503,8 @@ export function TodayPage({
                 <article key={item.term}>
                   <div className="section-heading-row">
                     <h4 lang="en">{item.term}</h4>
-                    <StatusTag tone="info">
-                      {item.partOfSpeech ?? kindLabels[item.kind]}
-                    </StatusTag>
                   </div>
-                  <p>
-                    <strong>中文释义：</strong>
-                    {item.definitionZh ?? item.definition}
-                  </p>
+                  <VocabularyMeaningList item={item} />
                   <p lang="en">
                     <strong>英文解释：</strong>
                     {item.definition}
@@ -739,7 +790,7 @@ export function LearningPage({
     ...content.payload.vocabulary.map((item) => ({
       kind: kindLabels[item.kind],
       term: item.term,
-      detail: `${item.partOfSpeech ?? kindLabels[item.kind]}；${item.definitionZh ?? item.definition}。${item.example}${item.exampleZh ? `（${item.exampleZh}）` : ''}`,
+      detail: `${vocabularySummary(item)}${item.example}${item.exampleZh ? `（${item.exampleZh}）` : ''}`,
     })),
     ...(content.payload.practicalExpressions ?? []).map((item) => ({
       kind: '场景表达',
