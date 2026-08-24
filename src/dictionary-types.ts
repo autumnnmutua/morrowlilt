@@ -24,6 +24,7 @@ export type DictionaryEntry = {
   headword: string
   phonetic?: string
   chineseSummary?: string
+  chineseSummaryLines?: string[]
   pronunciations: Array<{
     text?: string
     audioUrl?: string
@@ -59,6 +60,11 @@ export type DictionaryHistoryItem = {
   term: string
   searchCount: number
   lastSearchedAt: string
+}
+
+export type DictionaryFavoriteItem = {
+  term: string
+  createdAt: string
 }
 
 export type DictionarySuggestions = {

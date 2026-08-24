@@ -21,6 +21,7 @@ const result: DictionaryResult = {
       headword: 'resilient',
       phonetic: '/rɪˈzɪliənt/',
       chineseSummary: 'adj.有韧性的；有弹性的',
+      chineseSummaryLines: ['adj.有韧性的；有弹性的；'],
       pronunciations: [
         {
           text: '/rɪˈzɪliənt/',
@@ -98,7 +99,7 @@ afterEach(() => {
 function mockHistoryAndLookup(lookup: () => Promise<Response>) {
   vi.stubGlobal(
     'fetch',
-    vi.fn((input: RequestInfo | URL) => {
+    vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const url =
         typeof input === 'string'
           ? input
@@ -106,6 +107,12 @@ function mockHistoryAndLookup(lookup: () => Promise<Response>) {
             ? input.toString()
             : input.url
       if (url === '/api/dictionary/history') {
+        return Promise.resolve(Response.json({ data: [] }))
+      }
+      if (
+        url === '/api/dictionary/favorites' &&
+        (!init?.method || init.method === 'GET')
+      ) {
         return Promise.resolve(Response.json({ data: [] }))
       }
       if (url === '/api/dictionary/exam-lists') {
@@ -181,6 +188,26 @@ function mockHistoryAndLookup(lookup: () => Promise<Response>) {
 }
 
 describe('DictionaryExperience', () => {
+  function enterQuery(value = 'resilient') {
+    fireEvent.change(screen.getByLabelText('搜索英语单词或短语'), {
+      target: { value },
+    })
+  }
+
+  it('starts with an empty search and keeps favorites easy to reach', async () => {
+    mockHistoryAndLookup(() => Promise.resolve(Response.json({ data: result })))
+    render(<DictionaryExperience />)
+
+    expect(screen.getByLabelText('搜索英语单词或短语')).toHaveValue('')
+    expect(screen.queryByLabelText('resilient 的词典结果')).toBeNull()
+    expect(
+      await screen.findByRole('heading', { name: '我的收藏' }),
+    ).toBeVisible()
+    expect(
+      screen.getByText('查词后点击“加入收藏”，词条会集中显示在这里。'),
+    ).toBeVisible()
+  })
+
   it('browses a selected exam dictionary by A–Z and opens a full entry', async () => {
     mockHistoryAndLookup(() =>
       Promise.resolve(
@@ -218,6 +245,7 @@ describe('DictionaryExperience', () => {
     )
     render(<DictionaryExperience />)
 
+    enterQuery()
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
     expect(screen.getByRole('button', { name: '查询中…' })).toBeDisabled()
     await waitFor(() => expect(resolveLookup).toBeDefined())
@@ -237,7 +265,7 @@ describe('DictionaryExperience', () => {
     expect(screen.getByLabelText('resilient 发音 1')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: '播放发音' })).toBeInTheDocument()
     const phonetic = document.querySelector('.dictionary-head .phonetic')
-    const chineseSummary = screen.getByText('adj.有韧性的；有弹性的')
+    const chineseSummary = screen.getByText('adj.有韧性的；有弹性的；')
     expect(phonetic).not.toBeNull()
     expect(
       phonetic!.compareDocumentPosition(chineseSummary) &
@@ -264,6 +292,9 @@ describe('DictionaryExperience', () => {
         if (url === '/api/dictionary/history') {
           return Promise.resolve(Response.json({ data: [] }))
         }
+        if (url === '/api/dictionary/favorites') {
+          return Promise.resolve(Response.json({ data: [] }))
+        }
         if (url === '/api/dictionary/exam-lists') {
           return Promise.resolve(Response.json({ data: { lists: [] } }))
         }
@@ -280,12 +311,13 @@ describe('DictionaryExperience', () => {
     )
 
     render(<DictionaryExperience />)
+    enterQuery()
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
 
     expect(
       await screen.findByRole('button', { name: '补充中…' }),
     ).toBeDisabled()
-    expect(screen.getByText('adj.有韧性的；有弹性的')).toBeInTheDocument()
+    expect(screen.getByText('adj.有韧性的；有弹性的；')).toBeInTheDocument()
     expect(screen.getByText(/正在补充在线释义/)).toBeInTheDocument()
 
     resolveComplete?.(
@@ -310,6 +342,7 @@ describe('DictionaryExperience', () => {
       ),
     )
     render(<DictionaryExperience />)
+    enterQuery('missing')
     fireEvent.submit(
       screen.getByRole('button', { name: '搜索' }).closest('form')!,
     )
@@ -334,6 +367,7 @@ describe('DictionaryExperience', () => {
       )
     })
     render(<DictionaryExperience />)
+    enterQuery()
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
     expect(await screen.findByRole('alert')).toHaveTextContent('查询超时')
     expect(screen.getByLabelText('搜索英语单词或短语')).toHaveValue('resilient')
@@ -364,6 +398,7 @@ describe('DictionaryExperience', () => {
     )
 
     render(<DictionaryExperience />)
+    enterQuery()
     fireEvent.click(screen.getByRole('button', { name: '搜索' }))
     const playButton = await screen.findByRole('button', { name: '播放发音' })
     fireEvent.click(playButton)

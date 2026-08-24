@@ -32,14 +32,16 @@
 - `GET /api/quiz/sessions`：读取最近可恢复的进行中会话。
 - `POST /api/quiz/sessions`：创建会话；需要 `Idempotency-Key`。
 - `GET /api/quiz/sessions/:id`：读取安全会话快照。
+- `DELETE /api/quiz/sessions/:id`：放弃当前进行中会话并回到题型选择；需要 `Idempotency-Key`。
 - `POST /api/quiz/sessions/:id/answers`：保存单题答案与毫秒用时；需要 `Idempotency-Key`。
 - `POST /api/quiz/sessions/:id/complete`：完成会话、生成报告并更新错题；重复请求返回同一报告。
 - `GET /api/quiz/sessions/:id/report`：读取已完成报告。
+- `DELETE /api/quiz/sessions/:id/report`：隐藏当前用户自己的已完成报告；需要 `Idempotency-Key`，不删除错题与作答历史。
 - `GET /api/quiz/reports/latest`：读取最近报告。
 - `GET /api/mistakes`：读取 active 与 mastered 错题摘要。
 - `DELETE /api/mistakes/:id`：只允许当前用户移除自己的 mastered 项目；需要 `Idempotency-Key`，其他账号或不可移除的 ID 均返回 404。
 
-完成报告会把选项 ID 转换为用户实际看到的词或释义，并对错误答案展示：所选项为何不合适、正确项为何成立、其余干扰项如何逐一排除。以上字段只在会话完成后返回，不会提前进入浏览器可见数据。
+完成报告会把选项 ID 转换为用户实际看到的词或释义，并为每个选项分别返回中文含义、所选项为何不合适、正确项为何成立、其余干扰项如何逐一排除。报告不再用同一句通用提示代替各选项解释。以上字段只在会话完成后返回，不会提前进入浏览器可见数据。
 
 ## 三会话示例（匿名固定夹具）
 

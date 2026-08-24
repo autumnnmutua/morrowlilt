@@ -17,6 +17,7 @@ import {
   browseExamDictionary,
   DictionaryDomainError,
   getExamDictionaryCatalog,
+  getDictionaryFavorites,
   getDictionaryHistory,
   getDictionarySuggestions,
   fetchDictionaryAudio,
@@ -402,8 +403,12 @@ describe('exam dictionary catalog and A–Z browser', () => {
       result.entries[0].partsOfSpeech[0].senses[0].translatedDefinition?.text,
     ).toBe('仔细检查')
     expect(result.entries[0].chineseSummary).toBe(
-      'v.仔细检查；n.仔细检查；审查',
+      'v.仔细检查；\nn.仔细检查；审查；',
     )
+    expect(result.entries[0].chineseSummaryLines).toEqual([
+      'v.仔细检查；',
+      'n.仔细检查；审查；',
+    ])
     expect(result.entries[0].inflections.map((item) => item.label)).toEqual([
       '过去式',
       '过去分词',
@@ -437,9 +442,50 @@ describe('exam dictionary catalog and A–Z browser', () => {
     })
 
     expect(result.warningCode).toBe('DICTIONARY_LOCAL_PREVIEW')
-    expect(result.entries[0].chineseSummary).toBe('v.预览')
+    expect(result.entries[0].chineseSummary).toBe('v.预览；')
+    expect(result.entries[0].chineseSummaryLines).toEqual(['v.预览；'])
     expect(provider.calls).toBe(0)
     expect(await getDictionaryHistory(env.DB, profileId)).toEqual([])
+  })
+
+  it('keeps literal line breaks and distinct noun, transitive, and intransitive verb rows', async () => {
+    const normalizedWord = 'yachttest'
+    await env.DB.prepare(
+      `INSERT OR REPLACE INTO dictionary_exam_lexemes
+       (normalized_word, display_word, phonetic, english_definition,
+        chinese_translation, parts_of_speech, exchange, source_name,
+        source_url, source_license, updated_at)
+       VALUES (?, ?, 'jɒt', ?, ?, 'n:40/vi:30/vt:30', '',
+               'ECDICT', 'https://github.com/skywind3000/ECDICT',
+               'MIT', CURRENT_TIMESTAMP)`,
+    )
+      .bind(
+        normalizedWord,
+        normalizedWord,
+        'n. a sailing boat\\nvi. to travel by yacht\\nvt. to carry by yacht',
+        'n.快艇；游艇\\nvi.驾游艇；乘游艇\\nvt.用游艇运送',
+      )
+      .run()
+
+    const result = await lookupDictionary({
+      db: env.DB,
+      profileId: await profile('dictionary-pos-lines'),
+      provider: new SequenceDictionaryProvider(),
+      rawTerm: normalizedWord,
+      quick: true,
+    })
+
+    expect(result.entries[0].partsOfSpeech.map((item) => item.label)).toEqual([
+      'noun',
+      'intransitive verb',
+      'transitive verb',
+    ])
+    expect(result.entries[0].chineseSummaryLines).toEqual([
+      'n.快艇；游艇；',
+      'vi.驾游艇；乘游艇；',
+      'vt.用游艇运送；',
+    ])
+    expect(result.entries[0].chineseSummary).not.toContain('\\n')
   })
 
   it('serves the catalog with browser-cache metadata', async () => {
@@ -720,6 +766,9 @@ describe('dictionary normalization, D1 cache, and saved terms', () => {
       .first<{ count: number }>()
     expect(favoriteCount?.count).toBe(1)
     expect(reviewCount?.count).toBe(1)
+    expect(await getDictionaryFavorites(env.DB, profileId)).toEqual([
+      expect.objectContaining({ term: 'resilient' }),
+    ])
   })
 
   it('keeps third-party calls behind the Worker API', async () => {

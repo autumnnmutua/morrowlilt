@@ -40,6 +40,7 @@ export type DictionaryEntry = {
   headword: string
   phonetic?: string
   chineseSummary?: string
+  chineseSummaryLines?: string[]
   pronunciations: DictionaryPronunciation[]
   forms: string[]
   inflections: Array<{ form: string; label: string }>

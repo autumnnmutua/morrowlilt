@@ -10,8 +10,10 @@ import { normalizeAnswer, scoreAnswer } from '../../worker/quiz/scoring'
 import type { QuestionType } from '../../worker/quiz/types'
 import { ensureAppProfile } from '../../worker/services/learning'
 import {
+  abandonQuizSession,
   completeQuizSession,
   createQuizSession,
+  deleteQuizReport,
   dismissMasteredMistake,
   getActiveQuizSession,
   getQuizReport,
@@ -100,6 +102,18 @@ describe('quiz generator and scoring', () => {
           question.inputMode === 'choice' && question.options?.length === 4,
       ),
     ).toBe(true)
+  })
+
+  it('provides a concrete Chinese meaning for every visible choice', () => {
+    for (const question of questionBank) {
+      for (const option of question.options ?? []) {
+        const meaning = question.answerAnalysis.optionMeanings?.[option.id]
+        expect(meaning, `${question.id}/${option.id}`).toBeTruthy()
+        expect(meaning, `${question.id}/${option.id}`).not.toContain(
+          '在本题语境中的中文含义',
+        )
+      }
+    }
   })
 
   it('uses 256-bit Web Crypto seeds and reproduces the same ordered set', async () => {
@@ -229,6 +243,48 @@ describe('quiz sessions, reports, and mistake mastery', () => {
     )
     expect(wrongChoice?.responseExplanation).toContain('definitely-wrong')
     expect(wrongChoice?.eliminationSteps).toHaveLength(3)
+    expect(wrongChoice?.optionAnalyses).toHaveLength(4)
+    expect(
+      wrongChoice?.optionAnalyses.every(
+        (option) => option.meaningZh.length > 0 && option.reason.length > 0,
+      ),
+    ).toBe(true)
+    expect(
+      wrongChoice?.optionAnalyses.some((option) =>
+        option.reason.includes(option.meaningZh),
+      ),
+    ).toBe(true)
+  })
+
+  it('resets an active session without exposing another user session', async () => {
+    const profileId = await profile('reset-owner')
+    const session = await createQuizSession({
+      db: env.DB,
+      profileId,
+      idempotencyKey: `reset-${crypto.randomUUID()}`,
+      count: 6,
+      types,
+      mode: 'mixed',
+      seedHex: seed(205),
+    })
+
+    await expect(
+      abandonQuizSession({ db: env.DB, profileId, sessionId: session.id }),
+    ).resolves.toEqual({ reset: true })
+    await expect(
+      abandonQuizSession({ db: env.DB, profileId, sessionId: session.id }),
+    ).resolves.toEqual({ reset: true })
+    expect(await getActiveQuizSession(env.DB, profileId)).toBeUndefined()
+    await expect(
+      abandonQuizSession({
+        db: env.DB,
+        profileId: await profile('reset-other-owner'),
+        sessionId: session.id,
+      }),
+    ).rejects.toMatchObject({
+      code: 'QUIZ_SESSION_NOT_RESETTABLE',
+      status: 404,
+    })
   })
 
   it('makes creation and answer submission idempotent and resumes midway', async () => {
@@ -369,5 +425,37 @@ describe('quiz sessions, reports, and mistake mastery', () => {
     expect(
       (await getQuizReport(env.DB, profileId, session.id))?.sessionId,
     ).toBe(session.id)
+  })
+
+  it('soft-deletes a report while retaining learning history and owner isolation', async () => {
+    const profileId = await profile('delete-report-owner')
+    const session = await createQuizSession({
+      db: env.DB,
+      profileId,
+      idempotencyKey: `delete-report-${crypto.randomUUID()}`,
+      count: 6,
+      types,
+      mode: 'mixed',
+      seedHex: seed(500),
+    })
+    await answerSession(profileId, session, 'wrong')
+    const mistakesBefore = await listMistakes(env.DB, profileId)
+
+    await expect(
+      deleteQuizReport({ db: env.DB, profileId, sessionId: session.id }),
+    ).resolves.toEqual({ deleted: true })
+    await expect(
+      deleteQuizReport({ db: env.DB, profileId, sessionId: session.id }),
+    ).resolves.toEqual({ deleted: true })
+    expect(await getQuizReport(env.DB, profileId, session.id)).toBeUndefined()
+    expect(await getQuizReport(env.DB, profileId)).toBeUndefined()
+    expect(await listMistakes(env.DB, profileId)).toEqual(mistakesBefore)
+    await expect(
+      deleteQuizReport({
+        db: env.DB,
+        profileId: await profile('delete-report-other-owner'),
+        sessionId: session.id,
+      }),
+    ).rejects.toMatchObject({ code: 'QUIZ_REPORT_NOT_FOUND', status: 404 })
   })
 })

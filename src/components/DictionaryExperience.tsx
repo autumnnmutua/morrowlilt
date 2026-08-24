@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type {
   DictionaryGeneratedField,
+  DictionaryFavoriteItem,
   DictionaryHistoryItem,
   DictionaryLicense,
   DictionaryResult,
@@ -8,6 +9,7 @@ import type {
 } from '../dictionary-types'
 import { ApiError, apiGet, apiMutation } from '../lib/api'
 import {
+  dictionaryFavoritesSchema,
   dictionaryHistorySchema,
   dictionaryResultSchema,
   dictionarySuggestionsSchema,
@@ -133,6 +135,9 @@ function partOfSpeechLabel(label: string): string {
   const chinese: Record<string, string> = {
     noun: '名词',
     verb: '动词',
+    'intransitive verb': '不及物动词',
+    'transitive verb': '及物动词',
+    'auxiliary verb': '助动词',
     adjective: '形容词',
     adverb: '副词',
     pronoun: '代词',
@@ -147,12 +152,13 @@ function partOfSpeechLabel(label: string): string {
 }
 
 export function DictionaryExperience() {
-  const [query, setQuery] = useState('resilient')
+  const [query, setQuery] = useState('')
   const [status, setStatus] = useState<
     'idle' | 'loading' | 'enriching' | 'ready' | 'empty' | 'error'
   >('idle')
   const [result, setResult] = useState<DictionaryResult>()
   const [history, setHistory] = useState<DictionaryHistoryItem[]>([])
+  const [favorites, setFavorites] = useState<DictionaryFavoriteItem[]>([])
   const [message, setMessage] = useState(
     '输入英语单词或短语；查询只会发送到本站 Worker。',
   )
@@ -173,14 +179,34 @@ export function DictionaryExperience() {
     }
   }
 
+  const loadFavorites = async () => {
+    try {
+      setFavorites(
+        await apiGet('/api/dictionary/favorites', dictionaryFavoritesSchema),
+      )
+    } catch {
+      // Favorites are supplementary; dictionary lookup remains usable.
+    }
+  }
+
   useEffect(() => {
     const controller = new AbortController()
-    void apiGet(
-      '/api/dictionary/history',
-      dictionaryHistorySchema,
-      controller.signal,
-    )
-      .then(setHistory)
+    void Promise.all([
+      apiGet(
+        '/api/dictionary/history',
+        dictionaryHistorySchema,
+        controller.signal,
+      ),
+      apiGet(
+        '/api/dictionary/favorites',
+        dictionaryFavoritesSchema,
+        controller.signal,
+      ),
+    ])
+      .then(([historyData, favoriteData]) => {
+        setHistory(historyData)
+        setFavorites(favoriteData)
+      })
       .catch(() => {
         // History is supplementary; search remains usable when unavailable.
       })
@@ -299,6 +325,7 @@ export function DictionaryExperience() {
       setSaveMessage(
         destination === 'favorites' ? '已加入收藏。' : '已加入复习队列。',
       )
+      if (destination === 'favorites') void loadFavorites()
     } catch (error) {
       setSaveMessage(
         error instanceof Error ? error.message : '保存失败，请重试。',
@@ -419,6 +446,35 @@ export function DictionaryExperience() {
           </button>
         </div>
       </form>
+      <section
+        aria-labelledby="dictionary-favorites-title"
+        className="dictionary-favorites"
+      >
+        <div className="dictionary-history__heading">
+          <h2 id="dictionary-favorites-title">我的收藏</h2>
+          <span>{favorites.length} 个词条</span>
+        </div>
+        {favorites.length ? (
+          <nav aria-label="收藏词条" className="dictionary-history__list">
+            {favorites.map((item) => (
+              <button
+                key={item.term}
+                onClick={() => {
+                  setQuery(item.term)
+                  void search(item.term)
+                }}
+                type="button"
+              >
+                {item.term}
+              </button>
+            ))}
+          </nav>
+        ) : (
+          <p className="field-note">
+            查词后点击“加入收藏”，词条会集中显示在这里。
+          </p>
+        )}
+      </section>
       {history.length > 0 && (
         <section
           aria-labelledby="dictionary-history-title"
@@ -527,11 +583,24 @@ export function DictionaryExperience() {
                   {entry.phonetic && (
                     <p className="phonetic">{entry.phonetic}</p>
                   )}
-                  {entry.chineseSummary && (
-                    <p className="dictionary-chinese-summary">
+                  {(entry.chineseSummaryLines?.length ||
+                    entry.chineseSummary) && (
+                    <div className="dictionary-chinese-summary">
                       <strong>中文释义</strong>
-                      <span>{entry.chineseSummary}</span>
-                    </p>
+                      <ul>
+                        {(entry.chineseSummaryLines?.length
+                          ? entry.chineseSummaryLines
+                          : (entry.chineseSummary
+                              ?.replace(/\\n/g, '\n')
+                              .split(/\r?\n/)
+                              .filter(Boolean) ?? [])
+                        ).map((line, index) => (
+                          <li key={`${line}-${index}`}>
+                            {/[；;]$/u.test(line) ? line : `${line}；`}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
                   )}
                 </div>
                 <span className="status-tag status-tag--neutral">

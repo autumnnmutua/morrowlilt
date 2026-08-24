@@ -961,8 +961,8 @@ export function ReportPage({
 }
 
 export function DictionaryPage() {
-  const [query, setQuery] = useState('resilient')
-  const [submittedQuery, setSubmittedQuery] = useState('resilient')
+  const [query, setQuery] = useState('')
+  const [submittedQuery, setSubmittedQuery] = useState('')
 
   return (
     <div className="page page--reading">
@@ -975,7 +975,7 @@ export function DictionaryPage() {
         className="dictionary-search"
         onSubmit={(event) => {
           event.preventDefault()
-          setSubmittedQuery(query.trim() || 'resilient')
+          setSubmittedQuery(query.trim())
         }}
       >
         <label htmlFor="dictionary-query">搜索英语单词</label>
@@ -992,36 +992,41 @@ export function DictionaryPage() {
         </div>
       </form>
 
-      <section aria-labelledby="dictionary-word" className="dictionary-result">
-        <div className="dictionary-head">
-          <div>
-            <p className="section-kicker">词条</p>
-            <h2 id="dictionary-word">{submittedQuery}</h2>
-            <p className="phonetic">/rɪˈzɪliənt/</p>
+      {submittedQuery && (
+        <section
+          aria-labelledby="dictionary-word"
+          className="dictionary-result"
+        >
+          <div className="dictionary-head">
+            <div>
+              <p className="section-kicker">词条</p>
+              <h2 id="dictionary-word">{submittedQuery}</h2>
+              <p className="phonetic">/rɪˈzɪliənt/</p>
+            </div>
+            <StatusTag tone="info">完整释义</StatusTag>
           </div>
-          <StatusTag tone="info">完整释义</StatusTag>
-        </div>
-        <article className="part-of-speech">
-          <h3>adjective · 形容词</h3>
-          <ol>
-            <li>
-              <p>能够承受或迅速从困难中恢复的；有韧性的。</p>
-              <blockquote>
-                Small communities can be remarkably resilient after economic
-                change.
-                <span>经历经济变化后，小型社区可以表现出惊人的韧性。</span>
-              </blockquote>
-            </li>
-            <li>
-              <p>（材料或物体）有弹性的，能恢复原状的。</p>
-              <blockquote>
-                The surface is resilient enough for repeated daily use.
-                <span>这种表面有足够弹性，能够承受日常反复使用。</span>
-              </blockquote>
-            </li>
-          </ol>
-        </article>
-      </section>
+          <article className="part-of-speech">
+            <h3>adjective · 形容词</h3>
+            <ol>
+              <li>
+                <p>能够承受或迅速从困难中恢复的；有韧性的。</p>
+                <blockquote>
+                  Small communities can be remarkably resilient after economic
+                  change.
+                  <span>经历经济变化后，小型社区可以表现出惊人的韧性。</span>
+                </blockquote>
+              </li>
+              <li>
+                <p>（材料或物体）有弹性的，能恢复原状的。</p>
+                <blockquote>
+                  The surface is resilient enough for repeated daily use.
+                  <span>这种表面有足够弹性，能够承受日常反复使用。</span>
+                </blockquote>
+              </li>
+            </ol>
+          </article>
+        </section>
+      )}
     </div>
   )
 }
@@ -1313,7 +1318,7 @@ export function SettingsPage({
   return (
     <div className="page page--reading">
       <PageHeading
-        description="调整学习轨道、练习数量与显示方式。"
+        description="调整学习轨道、邮件和显示方式。"
         eyebrow="学习偏好"
         title="设置"
       />
@@ -1361,14 +1366,6 @@ export function SettingsPage({
           </button>
           <p aria-live="polite" className="field-note" role="status">
             {accountMessage}
-          </p>
-        </fieldset>
-
-        <fieldset>
-          <legend>测试与巩固</legend>
-          <p>
-            题量和题型可在每次开始测试前选择；系统会自动避开最近至少 20
-            次会话的完整题集指纹。
           </p>
         </fieldset>
 

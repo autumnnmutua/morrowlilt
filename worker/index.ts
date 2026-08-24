@@ -74,8 +74,10 @@ import {
 } from './services/daily-package'
 import { ensureProfileDailyContent } from './services/profile-daily-content'
 import {
+  abandonQuizSession,
   completeQuizSession,
   createQuizSession,
+  deleteQuizReport,
   dismissMasteredMistake,
   getActiveQuizSession,
   getQuizReport,
@@ -90,6 +92,7 @@ import {
   browseExamDictionary,
   DictionaryDomainError,
   fetchDictionaryAudio,
+  getDictionaryFavorites,
   getDictionaryHistory,
   getDictionarySuggestions,
   getExamDictionaryCatalog,
@@ -802,8 +805,18 @@ async function handleQuizSession(
   env: Env,
   sessionId: string,
 ): Promise<Response> {
-  if (request.method !== 'GET') return methodNotAllowed('GET')
   const profile = await ensureRequestProfile(env, getRequestProfileId(request))
+  if (request.method === 'DELETE') {
+    requireIdempotencyKey(request)
+    return json({
+      data: await abandonQuizSession({
+        db: env.DB,
+        profileId: profile.id,
+        sessionId,
+      }),
+    })
+  }
+  if (request.method !== 'GET') return methodNotAllowed('GET, DELETE')
   return json({ data: await getQuizSessionView(env.DB, profile.id, sessionId) })
 }
 
@@ -872,8 +885,20 @@ async function handleQuizReport(
   env: Env,
   sessionId?: string,
 ): Promise<Response> {
-  if (request.method !== 'GET') return methodNotAllowed('GET')
   const profile = await ensureRequestProfile(env, getRequestProfileId(request))
+  if (request.method === 'DELETE' && sessionId) {
+    requireIdempotencyKey(request)
+    return json({
+      data: await deleteQuizReport({
+        db: env.DB,
+        profileId: profile.id,
+        sessionId,
+      }),
+    })
+  }
+  if (request.method !== 'GET') {
+    return methodNotAllowed(sessionId ? 'GET, DELETE' : 'GET')
+  }
   return json({
     data: (await getQuizReport(env.DB, profile.id, sessionId)) ?? null,
   })
@@ -1010,7 +1035,16 @@ async function handleSaveDictionaryTerm(
   env: Env,
   destination: 'favorite' | 'review',
 ): Promise<Response> {
-  if (request.method !== 'POST') return methodNotAllowed('POST')
+  if (request.method === 'GET' && destination === 'favorite') {
+    const profile = await ensureRequestProfile(
+      env,
+      getRequestProfileId(request),
+    )
+    return json({ data: await getDictionaryFavorites(env.DB, profile.id) })
+  }
+  if (request.method !== 'POST') {
+    return methodNotAllowed(destination === 'favorite' ? 'GET, POST' : 'POST')
+  }
   requireIdempotencyKey(request)
   const body = requireRecord(await readBoundedRequestJson(request))
   if (Object.keys(body).length !== 1 || typeof body.term !== 'string') {

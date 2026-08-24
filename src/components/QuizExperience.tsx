@@ -10,6 +10,8 @@ import { apiDelete, apiGet, apiMutation } from '../lib/api'
 import {
   mistakeListSchema,
   quizReportSchema,
+  quizReportDeleteSchema,
+  quizResetSchema,
   quizSessionSchema,
   unknownObjectSchema,
 } from '../lib/schemas'
@@ -63,12 +65,39 @@ function DegradedNotice({ reason }: { reason?: string }) {
 }
 
 export function QuizReportPanel({
+  onDeleted,
   onNavigate,
+  onReset,
   report,
 }: {
+  onDeleted: () => void
   onNavigate: (page: PageId) => void
+  onReset?: () => void
   report: QuizReport
 }) {
+  const [confirmingDelete, setConfirmingDelete] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [deleteMessage, setDeleteMessage] = useState('')
+
+  const deleteReport = async () => {
+    setDeleting(true)
+    setDeleteMessage('正在删除报告…')
+    try {
+      await apiDelete(
+        `/api/quiz/sessions/${encodeURIComponent(report.sessionId)}/report`,
+        quizReportDeleteSchema,
+        'quiz-report-delete',
+      )
+      onDeleted()
+    } catch (error) {
+      setDeleteMessage(
+        error instanceof Error ? error.message : '报告删除失败，请重试。',
+      )
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
     <div className="page">
       <header className="page-heading">
@@ -77,6 +106,48 @@ export function QuizReportPanel({
           {report.correctCount} / {report.questionCount} 正确
         </h1>
       </header>
+      <div className="button-row report-actions">
+        {onReset && (
+          <button
+            className="button button--secondary"
+            onClick={onReset}
+            type="button"
+          >
+            重置测试
+          </button>
+        )}
+        {confirmingDelete ? (
+          <div aria-label="确认删除报告" className="button-row" role="group">
+            <button
+              className="button button--danger"
+              disabled={deleting}
+              onClick={() => void deleteReport()}
+              type="button"
+            >
+              {deleting ? '正在删除…' : '确认删除报告'}
+            </button>
+            <button
+              className="button button--secondary"
+              disabled={deleting}
+              onClick={() => setConfirmingDelete(false)}
+              type="button"
+            >
+              取消
+            </button>
+          </div>
+        ) : (
+          <button
+            className="button button--secondary"
+            onClick={() => setConfirmingDelete(true)}
+            type="button"
+          >
+            删除这份报告
+          </button>
+        )}
+      </div>
+      <p aria-live="polite" className="field-note" role="status">
+        {deleteMessage}
+      </p>
       <DegradedNotice reason={report.degradedReason} />
       <section aria-label="测试结果摘要" className="report-summary">
         <div>
@@ -148,22 +219,42 @@ export function QuizReportPanel({
                   {item.standardAnswer}
                 </p>
                 <p>{item.explanation}</p>
+                {item.optionAnalyses.length > 0 && (
+                  <div className="option-analysis">
+                    <strong>每个选项的释义与判断：</strong>
+                    <ol>
+                      {item.optionAnalyses.map((option, optionIndex) => (
+                        <li
+                          className={
+                            option.isCorrect
+                              ? 'option-analysis--correct'
+                              : undefined
+                          }
+                          key={option.id}
+                        >
+                          <p>
+                            <strong>
+                              {String.fromCharCode(65 + optionIndex)}.{' '}
+                              {option.label}
+                            </strong>
+                            <span>中文：{option.meaningZh}</span>
+                          </p>
+                          <p>
+                            {option.reason}
+                            {option.isCorrect ? '（正确选项）' : ''}
+                            {option.isSelected ? '（你的选择）' : ''}
+                          </p>
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
                 {!item.isCorrect && (
                   <div className="answer-analysis">
                     <p>
                       <strong>为什么你的答案不合适：</strong>
                       {item.responseExplanation}
                     </p>
-                    {item.eliminationSteps.length > 0 && (
-                      <>
-                        <strong>逐项排除：</strong>
-                        <ul>
-                          {item.eliminationSteps.map((step) => (
-                            <li key={step}>{step}</li>
-                          ))}
-                        </ul>
-                      </>
-                    )}
                   </div>
                 )}
                 <small>
@@ -273,6 +364,40 @@ export function QuizExperience({
     }
   }
 
+  const returnToSettings = () => {
+    setSession(undefined)
+    setReport(undefined)
+    setResponse('')
+    setCount(10)
+    setTypes(selectableTypes)
+    setMessage('请选择题量和题型。')
+    setState('settings')
+  }
+
+  const resetActiveQuiz = async () => {
+    if (!session) {
+      returnToSettings()
+      return
+    }
+    if (!window.confirm('确认重置当前测试？已作答的本次进度不会继续恢复。')) {
+      return
+    }
+    setSubmitting(true)
+    setMessage('正在重置测试…')
+    try {
+      await apiDelete(
+        `/api/quiz/sessions/${encodeURIComponent(session.id)}`,
+        quizResetSchema,
+        'quiz-reset',
+      )
+      returnToSettings()
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : '重置测试失败')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
   const submit = async () => {
     if (!session || !question || !response.trim()) return
     setSubmitting(true)
@@ -319,7 +444,14 @@ export function QuizExperience({
   }
 
   if (state === 'report' && report)
-    return <QuizReportPanel onNavigate={onNavigate} report={report} />
+    return (
+      <QuizReportPanel
+        onDeleted={returnToSettings}
+        onNavigate={onNavigate}
+        onReset={returnToSettings}
+        report={report}
+      />
+    )
   if (state === 'loading')
     return (
       <div className="page page--narrow">
@@ -339,6 +471,13 @@ export function QuizExperience({
           type="button"
         >
           重试
+        </button>
+        <button
+          className="button button--secondary"
+          onClick={returnToSettings}
+          type="button"
+        >
+          返回测试设置
         </button>
       </div>
     )
@@ -394,7 +533,7 @@ export function QuizExperience({
             disabled={submitting || types.length === 0}
             type="submit"
           >
-            换一组题
+            开始测试
           </button>
         </form>
       </div>
@@ -412,6 +551,14 @@ export function QuizExperience({
         <p>
           {question.difficulty} · {question.theme}
         </p>
+        <button
+          className="button button--secondary quiz-reset-button"
+          disabled={submitting}
+          onClick={() => void resetActiveQuiz()}
+          type="button"
+        >
+          重置测试
+        </button>
       </header>
       <DegradedNotice reason={session.degradedReason} />
       <section aria-labelledby="quiz-question" className="quiz-panel">
@@ -538,7 +685,13 @@ export function LatestReportPage({
         </button>
       </div>
     )
-  return <QuizReportPanel onNavigate={onNavigate} report={report} />
+  return (
+    <QuizReportPanel
+      onDeleted={() => setReport(null)}
+      onNavigate={onNavigate}
+      report={report}
+    />
+  )
 }
 
 export function MistakeReviewPage({
@@ -609,6 +762,30 @@ export function MistakeReviewPage({
       <p aria-live="polite" role="status">
         {message}
       </p>
+      <section
+        aria-labelledby="review-action-title"
+        className="review-action-card"
+      >
+        <div>
+          <p className="eyebrow">优先操作</p>
+          <h2 id="review-action-title">复测当前错题</h2>
+          <p>
+            {items
+              ? `当前有 ${items.filter((item) => item.status === 'active').length} 项待复习。`
+              : '正在统计待复习项目…'}
+          </p>
+        </div>
+        <button
+          className="button button--primary review-start-button"
+          disabled={
+            starting || !items?.some((item) => item.status === 'active')
+          }
+          onClick={() => void startReview()}
+          type="button"
+        >
+          {starting ? '正在创建…' : '开始错题复测'}
+        </button>
+      </section>
       <div className="review-queue">
         <ol>
           {items?.map((item) => (
@@ -672,14 +849,6 @@ export function MistakeReviewPage({
           目前没有错题。完成测试后，错误项目会自动进入这里。
         </p>
       )}
-      <button
-        className="button button--primary"
-        disabled={starting || !items?.some((item) => item.status === 'active')}
-        onClick={() => void startReview()}
-        type="button"
-      >
-        {starting ? '正在创建…' : '开始错题复测'}
-      </button>
     </div>
   )
 }

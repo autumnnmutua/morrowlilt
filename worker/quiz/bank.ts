@@ -16,6 +16,66 @@ function optionReason(
   return `“${label}”不能同时满足空格前后的语法结构、词义和自然搭配，可排除。`
 }
 
+const optionMeaningsZh: Record<string, string> = {
+  mitigate: '减轻；缓和',
+  intensify: '加强；加剧',
+  allocate: '分配；拨给',
+  predict: '预测；预言',
+  foster: '促进；培养',
+  interrupt: '打断；中断',
+  estimate: '估计；评估',
+  withdraw: '撤回；退出',
+  undermine: '逐渐削弱；损害',
+  restore: '恢复；修复',
+  measure: '衡量；测量',
+  publish: '出版；公布',
+  outweigh: '比……更重要；超过',
+  postpone: '推迟；延期',
+  resemble: '与……相似',
+  divide: '分开；划分',
+  draw: '得出；拉；画',
+  pull: '拉；拖',
+  build: '建造；建立',
+  carry: '携带；承担',
+  make: '制造；使得',
+  pose: '造成；构成',
+  set: '设置；放置',
+  give: '给；提供',
+  'answer to': '回应；对……负责',
+  address: '处理；回应',
+  'settle with': '与……解决；和解',
+  reply: '回答；回复',
+  do: '做；执行',
+  hold: '持有；保持',
+  play: '发挥；扮演',
+  perform: '执行；表演',
+  prolong: '延长；拖延',
+  'de-escalate': '缓和；降低冲突强度',
+  document: '记录；为……提供文件证明',
+  categorise: '分类；归类',
+  restorative: '恢复精力的；有修复作用的',
+  repairing: '修理中的；用于修理的',
+  recoverable: '可恢复的；可挽回的',
+  restored: '已恢复的；修复后的',
+  clarify: '澄清；阐明',
+  justify: '证明……合理；为……辩护',
+  impair: '损害；削弱',
+  confirm: '确认；证实',
+  manufacture: '制造；生产',
+  operate: '操作；经营',
+  accessible: '可进入的；易使用或理解的',
+  optional: '可选择的；非强制的',
+  temporary: '暂时的；临时的',
+  exclusive: '专属的；排他的',
+}
+
+function optionMeaningZh(label: string): string {
+  if (/\p{Script=Han}/u.test(label)) return label
+  const meaning = optionMeaningsZh[label]
+  if (!meaning) throw new Error(`Missing Chinese option meaning: ${label}`)
+  return meaning
+}
+
 const choice = (
   id: string,
   type: QuestionType,
@@ -45,6 +105,9 @@ const choice = (
         optionId,
         optionReason(type, label, optionId === answer, explanation),
       ]),
+    ),
+    optionMeanings: Object.fromEntries(
+      options.map(([optionId, label]) => [optionId, optionMeaningZh(label)]),
     ),
   },
   theme,
