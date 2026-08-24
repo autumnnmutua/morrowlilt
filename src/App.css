@@ -1255,6 +1255,180 @@ progress::-moz-progress-bar {
   color: var(--color-error);
 }
 
+.exam-dictionary {
+  margin-top: var(--space-8);
+  padding: var(--space-5);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-panel);
+  background: var(--color-surface-muted);
+}
+
+.exam-dictionary__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-4);
+}
+
+.exam-dictionary__heading h2 {
+  margin: var(--space-1) 0 var(--space-2);
+}
+
+.exam-dictionary__heading p:last-child {
+  max-width: 46rem;
+  margin: 0;
+  color: var(--color-text-muted);
+}
+
+.exam-dictionary-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.exam-dictionary-grid > button {
+  display: grid;
+  min-width: 0;
+  min-height: 8.5rem;
+  align-content: start;
+  gap: var(--space-2);
+  padding: var(--space-4);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-content);
+  color: var(--color-heading);
+  background: var(--color-surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.exam-dictionary-grid > button:hover:not(:disabled) {
+  border-color: var(--color-primary);
+  background: var(--color-primary-soft);
+}
+
+.exam-dictionary-grid > button:disabled {
+  opacity: 0.62;
+  cursor: not-allowed;
+}
+
+.exam-dictionary-grid strong {
+  color: var(--color-primary-strong);
+  font-family: var(--font-display);
+  font-size: var(--font-size-h3);
+}
+
+.exam-dictionary-grid span,
+.exam-dictionary-grid small {
+  overflow-wrap: anywhere;
+}
+
+.exam-dictionary-grid small {
+  color: var(--color-text-muted);
+}
+
+.exam-dictionary-grid--loading > span,
+.exam-word-grid--loading > span {
+  min-height: 8.5rem;
+  border-radius: var(--radius-content);
+  background: var(--color-border);
+  animation: skeleton-pulse 1.2s ease-in-out infinite alternate;
+}
+
+.alphabet-index {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-5);
+}
+
+.alphabet-index button {
+  display: grid;
+  min-width: 0;
+  min-height: 52px;
+  place-items: center;
+  gap: 1px;
+  padding: var(--space-1);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-control);
+  color: var(--color-heading);
+  background: var(--color-surface);
+  cursor: pointer;
+}
+
+.alphabet-index button[aria-pressed='true'] {
+  border-color: var(--color-primary);
+  color: var(--color-primary-strong);
+  background: var(--color-primary-soft);
+  box-shadow: inset 0 -3px 0 var(--color-primary);
+}
+
+.alphabet-index button:disabled {
+  color: var(--color-text-muted);
+  background: transparent;
+  opacity: 0.48;
+  cursor: not-allowed;
+}
+
+.alphabet-index small {
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 0.66rem;
+  text-overflow: ellipsis;
+}
+
+.exam-word-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin: var(--space-4) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.exam-word-grid li {
+  min-width: 0;
+}
+
+.exam-word-grid button {
+  display: grid;
+  width: 100%;
+  min-height: 58px;
+  align-content: center;
+  gap: 2px;
+  padding: var(--space-2) var(--space-3);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-control);
+  color: var(--color-heading);
+  background: var(--color-surface);
+  text-align: left;
+  cursor: pointer;
+}
+
+.exam-word-grid button:hover {
+  border-color: var(--color-primary);
+}
+
+.exam-word-grid button span {
+  overflow: hidden;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.exam-word-grid button small {
+  color: var(--color-text-muted);
+}
+
+.exam-word-grid--loading > span {
+  min-height: 58px;
+}
+
+.exam-word-more {
+  width: 100%;
+  margin-top: var(--space-4);
+}
+
 .dictionary-search > label,
 .review-card > label,
 .settings-form label {
@@ -1551,6 +1725,22 @@ blockquote span {
   .review-layout {
     grid-template-columns: minmax(0, 1.55fr) minmax(15rem, 0.85fr);
     align-items: start;
+  }
+
+  .exam-dictionary {
+    padding: var(--space-6);
+  }
+
+  .exam-dictionary-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .alphabet-index {
+    grid-template-columns: repeat(13, minmax(0, 1fr));
+  }
+
+  .exam-word-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
   .review-queue,

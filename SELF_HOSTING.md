@@ -121,6 +121,14 @@ node scripts/build-wordnet-sql.mjs <PATH_TO_OEWN_WNDB> private/wordnet-import
 
 按文件名顺序把生成的 SQL 导入自己的 D1。源压缩包、SQL 分片和数据库状态不得提交。
 
+考试词典目录由 migration 自动创建；完整词头和 ECDICT 双语数据需在仓库外准备 `ecdict.csv` 与 JSON manifest，再生成 D1 分片：
+
+```bash
+node scripts/build-exam-dictionary-sql.mjs --ecdict <PATH_TO_ECDICT_CSV> --manifest <PATH_TO_LIST_MANIFEST> --output private/exam-dictionary-import
+```
+
+manifest 结构为 `{"lists":{"tem4":["tem4.json"],"awl":["awl-headwords.txt"]}}`，支持 `tem4`、`tem8`、`sat`、`gmat` 和 `awl` 外部词头；CET-4、CET-6、考研、IELTS、TOEFL、GRE 直接读取 ECDICT 标签，PETS-5 使用 ECDICT 的 BNC/FRQ 排序生成 7,500 词难度范围。按文件名顺序用 `wrangler d1 execute --file` 导入生成的 SQL，源文件与输出目录必须保持未跟踪。
+
 ## 9. 发布前检查
 
 ```bash

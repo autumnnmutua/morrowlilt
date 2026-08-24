@@ -10,6 +10,31 @@
 - `parseCachedPayload(payload, requestUrl)`：使用相同规则重新验证并清理 D1 中的原始 payload。
 - 默认实现为 `FreeDictionaryProvider`，目前使用 Free Dictionary API v2。
 
+## 考试词典与 A–Z 索引
+
+词典页同时提供 12 类可展开的备考词典：CET-4、CET-6、考研、PETS-5、TEM-4、TEM-8、IELTS、TOEFL、GRE、SAT、GMAT 和 AWL。中考、高考词表不在目录中。当前标准化导入结果如下：
+
+| 词典   |             词数 |
+| ------ | ---------------: |
+| CET-4  |            3,846 |
+| CET-6  |            5,406 |
+| 考研   |            4,801 |
+| PETS-5 |            7,500 |
+| TEM-4  |            4,025 |
+| TEM-8  |           12,197 |
+| IELTS  |            5,038 |
+| TOEFL  |            6,970 |
+| GRE    |            7,504 |
+| SAT    |            4,463 |
+| GMAT   |            3,047 |
+| AWL    | 570 个词族核心词 |
+
+`GET /api/dictionary/exam-lists` 只返回目录、实际词数和预计算的 A–Z 数量。`GET /api/dictionary/exam-lists/:slug?letter=A&cursor=...&limit=50` 使用 `(list_slug, initial, normalized_word)` 组合索引和 keyset cursor；不使用大偏移量，也不把整本词典或释义一次发到浏览器。每页默认 50、最多 100 词，界面显示该字母总数并允许继续加载全部内容。
+
+点击任一词头后仍调用完整词条查询：ECDICT 先提供音标、词性、中文释义与 exchange 词形，Open English WordNet 补充英文义项、例句和词汇关系，在线 Provider 可再补充发音与其他 entries。已有中文释义不会再次调用 TranslationProvider。
+
+考试词表数据不进入前端 bundle，也不提交生成 SQL。`scripts/build-exam-dictionary-sql.mjs` 从部署者在仓库外准备的 ECDICT CSV 和词头 manifest 生成小于 700 KiB、可重复执行的 SQL 分片，适合本地或远程 D1 分批导入；远程导入由 D1 API 原子执行每个文件，因此分片不嵌套显式事务。词数是标准化、去重、过滤非英语词头后的实际结果。
+
 站内还部署 Open English WordNet 2025 D1 词库作为第二数据源。它包含约 12.6 万个规范词条、18.4 万条带词性的义项记录与不规则词形映射：在线 Provider 正常时会与其去重合并，Provider 404、429、超时或 5xx 时则直接回退。WordNet 数据不进入前端 bundle。
 
 输入联想使用同源 `GET /api/dictionary/suggestions?q=...`，优先合并搜索历史和 D1 词库前缀；本地已有至少 8 个候选时立即返回，不再等待外部网络。候选不足时才由 Worker 请求 Datamuse `/sug` 补充拼写修正、近似词和高频候选。前端不直接请求 Datamuse；结果在 D1 缓存 24 小时，外部服务不可用时仍返回本地候选。

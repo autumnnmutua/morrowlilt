@@ -289,6 +289,43 @@ export const dictionarySuggestionsSchema = z.object({
   source: z.enum(['local', 'mixed']),
 })
 
+const examDictionaryListSchema = z.object({
+  slug: z.string().regex(/^[a-z0-9-]{2,32}$/),
+  name: nonEmpty,
+  shortName: nonEmpty,
+  description: nonEmpty,
+  source: z.object({
+    name: nonEmpty,
+    url: z.string().url(),
+    license: nonEmpty,
+  }),
+  entryCount: z.number().int().nonnegative(),
+  letterCounts: z.record(
+    z.string().regex(/^[A-Z]$/),
+    z.number().int().nonnegative(),
+  ),
+  updatedAt: nonEmpty,
+})
+
+export const examDictionaryCatalogSchema = z.object({
+  lists: z.array(examDictionaryListSchema),
+})
+
+export const examDictionaryPageSchema = z.object({
+  list: examDictionaryListSchema,
+  letter: z.string().regex(/^[A-Z]$/),
+  letterEntryCount: z.number().int().nonnegative(),
+  words: z.array(
+    z.object({
+      word: nonEmpty,
+      normalizedWord: nonEmpty,
+      rank: z.number().int().positive(),
+    }),
+  ),
+  hasMore: z.boolean(),
+  nextCursor: z.string().optional(),
+})
+
 export const dictionarySaveSchema = z
   .object({
     term: nonEmpty,

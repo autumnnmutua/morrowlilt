@@ -21,6 +21,12 @@ import {
   listLocalLexiconSuggestions,
   lookupLocalLexicon,
 } from '../repository/lexicon'
+import {
+  getExamDictionaryList,
+  listExamDictionaries,
+  listExamDictionaryWords,
+  lookupExamLexeme,
+} from '../repository/exam-dictionary'
 
 const cacheLifetimeMs = 7 * 24 * 60 * 60 * 1_000
 const dictionaryAudioHost = 'api.dictionaryapi.dev'
@@ -131,8 +137,10 @@ async function enrichWithChinese(
   for (const entry of result.entries) {
     for (const part of entry.partsOfSpeech) {
       for (const sense of part.senses) {
-        texts.push(sense.definition)
-        for (const example of sense.examples) texts.push(example.text)
+        if (!sense.translatedDefinition) texts.push(sense.definition)
+        for (const example of sense.examples) {
+          if (!example.translation) texts.push(example.text)
+        }
       }
     }
   }
@@ -194,25 +202,37 @@ async function enrichWithChinese(
       partsOfSpeech: entry.partsOfSpeech.map((part) => ({
         ...part,
         senses: part.senses.map((sense) => {
-          const translatedDefinition = translations[index++]!
+          const translatedDefinition = sense.translatedDefinition
+            ? undefined
+            : translations[index++]!
           return {
             ...sense,
-            translatedDefinition: {
-              text: translatedDefinition.translatedText,
-              provider: translatedDefinition.provider,
-              attribution: translatedDefinition.attribution,
-              originType: 'translated' as const,
-            },
+            translatedDefinition:
+              sense.translatedDefinition ??
+              (translatedDefinition
+                ? {
+                    text: translatedDefinition.translatedText,
+                    provider: translatedDefinition.provider,
+                    attribution: translatedDefinition.attribution,
+                    originType: 'translated' as const,
+                  }
+                : undefined),
             examples: sense.examples.map((example) => {
-              const translatedExample = translations[index++]!
+              const translatedExample = example.translation
+                ? undefined
+                : translations[index++]!
               return {
                 ...example,
-                translation: {
-                  text: translatedExample.translatedText,
-                  provider: translatedExample.provider,
-                  attribution: translatedExample.attribution,
-                  originType: 'translated' as const,
-                },
+                translation:
+                  example.translation ??
+                  (translatedExample
+                    ? {
+                        text: translatedExample.translatedText,
+                        provider: translatedExample.provider,
+                        attribution: translatedExample.attribution,
+                        originType: 'translated' as const,
+                      }
+                    : undefined),
               }
             }),
           }
@@ -318,9 +338,10 @@ export async function lookupDictionary(input: {
   const normalizedTerm = normalizeDictionaryTerm(input.rawTerm)
   const now = input.now ?? Date.now()
   const searchedAt = new Date(now).toISOString()
-  const [cached, local] = await Promise.all([
+  const [cached, localWordNet, localExam] = await Promise.all([
     getDictionaryCache(input.db, normalizedTerm),
     lookupLocalLexicon(input.db, normalizedTerm),
+    lookupExamLexeme(input.db, normalizedTerm),
     recordDictionarySearch(
       input.db,
       input.profileId,
@@ -328,6 +349,9 @@ export async function lookupDictionary(input: {
       searchedAt,
     ),
   ])
+  const local = localExam
+    ? mergeDictionaryResults(localExam, localWordNet)
+    : localWordNet
   if (
     cached?.provider === input.provider.name &&
     Date.parse(cached.expiresAt) > now
@@ -567,6 +591,87 @@ export function dictionaryLicenses(value: unknown): DictionaryLicense[] {
 
 export async function getDictionaryHistory(db: D1Database, profileId: string) {
   return listDictionaryHistory(db, profileId)
+}
+
+const examDictionarySlugs = new Set([
+  'cet4',
+  'cet6',
+  'postgrad',
+  'pets5',
+  'tem4',
+  'tem8',
+  'ielts',
+  'toefl',
+  'gre',
+  'sat',
+  'gmat',
+  'awl',
+])
+
+export async function getExamDictionaryCatalog(db: D1Database) {
+  return { lists: await listExamDictionaries(db) }
+}
+
+export async function browseExamDictionary(input: {
+  db: D1Database
+  rawSlug: string
+  rawLetter: string
+  rawCursor?: string
+  rawLimit?: string
+}) {
+  const slug = input.rawSlug.normalize('NFKC').trim().toLowerCase()
+  if (!examDictionarySlugs.has(slug)) {
+    throw new DictionaryDomainError(
+      'EXAM_DICTIONARY_NOT_FOUND',
+      'Exam dictionary was not found',
+      404,
+    )
+  }
+  const letter = input.rawLetter.normalize('NFKC').trim().toUpperCase()
+  if (!/^[A-Z]$/.test(letter)) {
+    throw new DictionaryDomainError(
+      'INVALID_EXAM_DICTIONARY_LETTER',
+      'Letter must be A to Z',
+    )
+  }
+  let cursor: string | undefined
+  if (input.rawCursor) {
+    cursor = normalizeDictionaryTerm(input.rawCursor)
+    if (!cursor.startsWith(letter.toLowerCase())) {
+      throw new DictionaryDomainError(
+        'INVALID_EXAM_DICTIONARY_CURSOR',
+        'Cursor does not belong to the selected letter',
+      )
+    }
+  }
+  const parsedLimit = input.rawLimit ? Number(input.rawLimit) : 50
+  if (!Number.isInteger(parsedLimit) || parsedLimit < 1 || parsedLimit > 100) {
+    throw new DictionaryDomainError(
+      'INVALID_EXAM_DICTIONARY_LIMIT',
+      'Limit must be an integer from 1 to 100',
+    )
+  }
+  const list = await getExamDictionaryList(input.db, slug)
+  if (!list) {
+    throw new DictionaryDomainError(
+      'EXAM_DICTIONARY_NOT_FOUND',
+      'Exam dictionary was not found',
+      404,
+    )
+  }
+  const page = await listExamDictionaryWords({
+    db: input.db,
+    slug,
+    letter,
+    cursor,
+    limit: parsedLimit,
+  })
+  return {
+    list,
+    letter,
+    letterEntryCount: list.letterCounts[letter] ?? 0,
+    ...page,
+  }
 }
 
 export async function addDictionaryTerm(input: {

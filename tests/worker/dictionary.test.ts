@@ -14,7 +14,9 @@ import {
 import { getDictionaryCache } from '../../worker/repository/dictionary'
 import {
   addDictionaryTerm,
+  browseExamDictionary,
   DictionaryDomainError,
+  getExamDictionaryCatalog,
   getDictionaryHistory,
   getDictionarySuggestions,
   fetchDictionaryAudio,
@@ -269,6 +271,151 @@ describe('Free Dictionary Provider', () => {
     await expect(provider.lookup('slow')).rejects.toMatchObject({
       code: 'EXTERNAL_TIMEOUT',
     })
+  })
+})
+
+describe('exam dictionary catalog and A–Z browser', () => {
+  it('includes all requested exam lists and excludes middle/high school lists', async () => {
+    const catalog = await getExamDictionaryCatalog(env.DB)
+    expect(catalog.lists.map((item) => item.slug)).toEqual([
+      'cet4',
+      'cet6',
+      'postgrad',
+      'pets5',
+      'tem4',
+      'tem8',
+      'ielts',
+      'toefl',
+      'gre',
+      'sat',
+      'gmat',
+      'awl',
+    ])
+    expect(catalog.lists.map((item) => item.slug)).not.toContain('gk')
+    expect(catalog.lists.map((item) => item.slug)).not.toContain('zk')
+  })
+
+  it('uses indexed cursor pagination and validates the selected letter', async () => {
+    await env.DB.batch([
+      env.DB.prepare(
+        `INSERT OR REPLACE INTO exam_dictionary_entries
+           (list_slug, normalized_word, display_word, initial, rank)
+           VALUES ('cet4', ?, ?, 'A', ?)`,
+      ).bind('abacus', 'abacus', 1),
+      env.DB.prepare(
+        `INSERT OR REPLACE INTO exam_dictionary_entries
+           (list_slug, normalized_word, display_word, initial, rank)
+           VALUES ('cet4', ?, ?, 'A', ?)`,
+      ).bind('abandon', 'abandon', 2),
+      env.DB.prepare(
+        `INSERT OR REPLACE INTO exam_dictionary_entries
+           (list_slug, normalized_word, display_word, initial, rank)
+           VALUES ('cet4', ?, ?, 'A', ?)`,
+      ).bind('ability', 'ability', 3),
+      env.DB.prepare(
+        `UPDATE exam_dictionary_lists
+         SET entry_count = 3, letter_counts_json = '{"A":3}'
+         WHERE slug = 'cet4'`,
+      ),
+    ])
+
+    const first = await browseExamDictionary({
+      db: env.DB,
+      rawSlug: 'cet4',
+      rawLetter: 'a',
+      rawLimit: '2',
+    })
+    expect(first.words.map((item) => item.normalizedWord)).toEqual([
+      'abacus',
+      'abandon',
+    ])
+    expect(first.hasMore).toBe(true)
+    expect(first.nextCursor).toBe('abandon')
+
+    const second = await browseExamDictionary({
+      db: env.DB,
+      rawSlug: 'cet4',
+      rawLetter: 'A',
+      rawCursor: first.nextCursor,
+      rawLimit: '2',
+    })
+    expect(second.words.map((item) => item.normalizedWord)).toEqual(['ability'])
+    expect(second.hasMore).toBe(false)
+
+    await expect(
+      browseExamDictionary({
+        db: env.DB,
+        rawSlug: 'cet4',
+        rawLetter: 'AA',
+      }),
+    ).rejects.toMatchObject({ code: 'INVALID_EXAM_DICTIONARY_LETTER' })
+
+    const plan = await env.DB.prepare(
+      `EXPLAIN QUERY PLAN
+       SELECT normalized_word FROM exam_dictionary_entries
+       WHERE list_slug = 'cet4' AND initial = 'A' AND normalized_word > ''
+       ORDER BY normalized_word LIMIT 51`,
+    ).all<{ detail: string }>()
+    expect(plan.results.map((item) => item.detail).join(' ')).toContain(
+      'exam_dictionary_entries_browse_idx',
+    )
+  })
+
+  it('returns ECDICT Chinese senses, parts of speech and inflections without retranslating them', async () => {
+    const normalizedWord = 'lexemetest'
+    await env.DB.prepare(
+      `INSERT OR REPLACE INTO dictionary_exam_lexemes
+       (normalized_word, display_word, phonetic, english_definition,
+        chinese_translation, parts_of_speech, exchange, source_name,
+        source_url, source_license, updated_at)
+       VALUES (?, ?, 'test', 'v. to examine carefully\nn. a careful examination',
+               'v. 仔细检查\nn. 仔细检查；审查', 'n:40/v:60',
+               ?, 'ECDICT', 'https://github.com/skywind3000/ECDICT',
+               'MIT', CURRENT_TIMESTAMP)`,
+    )
+      .bind(
+        normalizedWord,
+        normalizedWord,
+        `p:${normalizedWord}ed/d:${normalizedWord}ed/i:${normalizedWord}ing/3:${normalizedWord}s`,
+      )
+      .run()
+    const provider = new SequenceDictionaryProvider()
+    provider.error = new ExternalServiceError(
+      'EXTERNAL_HTTP_ERROR',
+      'not found',
+      false,
+      404,
+    )
+    const translationProvider = new RecordingTranslationProvider()
+    const result = await lookupDictionary({
+      db: env.DB,
+      profileId: await profile('exam-lexeme'),
+      provider,
+      translationProvider,
+      rawTerm: normalizedWord,
+    })
+    expect(result.entries[0].partsOfSpeech.map((item) => item.label)).toEqual([
+      'verb',
+      'noun',
+    ])
+    expect(
+      result.entries[0].partsOfSpeech[0].senses[0].translatedDefinition?.text,
+    ).toBe('仔细检查')
+    expect(result.entries[0].inflections.map((item) => item.label)).toEqual([
+      '过去式',
+      '过去分词',
+      '现在分词 / 动名词',
+      '第三人称单数',
+    ])
+    expect(translationProvider.calls).toEqual([])
+  })
+
+  it('serves the catalog with browser-cache metadata', async () => {
+    const response = await exports.default.fetch(
+      new Request('https://example.invalid/api/dictionary/exam-lists'),
+    )
+    expect(response.status).toBe(200)
+    expect(response.headers.get('cache-control')).toContain('max-age=300')
   })
 })
 

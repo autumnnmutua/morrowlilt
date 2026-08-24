@@ -252,6 +252,40 @@ test('dictionary renders complete stale-cache results accessibly on a small scre
       },
     })
   })
+  const examList = {
+    slug: 'ielts',
+    name: 'IELTS 备考词典',
+    shortName: 'IELTS',
+    description: '阅读、听力与写作常见词汇。',
+    source: {
+      name: 'ECDICT',
+      url: 'https://github.com/skywind3000/ECDICT',
+      license: 'MIT',
+    },
+    entryCount: 5038,
+    letterCounts: { A: 340, B: 238 },
+    updatedAt: '2026-08-24T00:00:00.000Z',
+  }
+  await page.route('**/api/dictionary/exam-lists', async (route) => {
+    await route.fulfill({ json: { data: { lists: [examList] } } })
+  })
+  await page.route('**/api/dictionary/exam-lists/ielts?*', async (route) => {
+    await route.fulfill({
+      json: {
+        data: {
+          list: examList,
+          letter: 'A',
+          letterEntryCount: 340,
+          words: [
+            { word: 'abandon', normalizedWord: 'abandon', rank: 1 },
+            { word: 'ability', normalizedWord: 'ability', rank: 2 },
+          ],
+          hasMore: true,
+          nextCursor: 'ability',
+        },
+      },
+    })
+  })
   await page.route('**/api/dictionary?*', async (route) => {
     await route.fulfill({
       json: {
@@ -333,6 +367,13 @@ test('dictionary renders complete stale-cache results accessibly on a small scre
   await page.setViewportSize({ width: 320, height: 720 })
   await page.goto('/')
   await page.getByRole('button', { name: '词典' }).last().click()
+  await page.getByRole('button', { name: /IELTS.*5,038 词/ }).click()
+  await expect(
+    page.getByRole('navigation', { name: 'IELTS 字母索引' }),
+  ).toBeVisible()
+  await expect(page.getByRole('button', { name: 'A，340 词' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /abandon/ })).toBeVisible()
+  await page.getByRole('button', { name: '返回词典列表' }).click()
   const searchInput = page.getByRole('combobox', {
     name: '搜索英语单词或短语',
   })

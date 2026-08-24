@@ -2,12 +2,15 @@
 
 可自托管的英语学习与雅思备考辅助工具。它提供每日学习包、实用表达、词汇与短语测评、错题巩固、完整词典查询、词形联想和按用户时区发送的每日邮件。
 
+[在线体验（Cloudflare Workers）](https://daily-english-study.esthertreu3724.workers.dev)
+
 ## 主要能力
 
 - 每个登录账号拥有独立的学习进度、打卡、测试会话、错题、收藏、邮箱和内容历史。
 - 同一账号当天内容稳定，两个账号在同一天获得不同的学习包。
 - 每日词汇包含词性、中文释义、例句、常用搭配和形态信息。
-- 词典服务完整遍历 Provider 返回的 entries、词性和 senses，并支持联想词与可选大型本地词库。
+- 词典服务完整遍历 Provider 返回的 entries、词性和 senses，并支持联想词、完整词形与大型本地词库。
+- 内置 CET-4、CET-6、考研、PETS-5、TEM-4、TEM-8、IELTS、TOEFL、GRE、SAT、GMAT 和 AWL 考试词典入口，可按 A–Z 索引与游标分页浏览。
 - 用户可在设置页提供自己的 Resend sending-access API Key、已验证发送域、IANA 时区和本地发送小时。
 - 用户 API Key 只进入同源 Worker，经 AES-GCM 加密后保存到 D1；前端、API 响应和日志不会回显。
 - Cloudflare Cron 每小时唤醒一次，只为达到各自本地发送时间的用户生成并投递邮件；单个用户失败不会阻塞其他用户。

@@ -87,10 +87,12 @@ import {
 } from './services/quiz'
 import {
   addDictionaryTerm,
+  browseExamDictionary,
   DictionaryDomainError,
   fetchDictionaryAudio,
   getDictionaryHistory,
   getDictionarySuggestions,
+  getExamDictionaryCatalog,
   lookupDictionary,
 } from './services/dictionary'
 import { assertIanaTimeZone, getLocalDate } from './time/business-date'
@@ -104,7 +106,7 @@ import {
 function json(data: unknown, init: ResponseInit = {}): Response {
   const headers = new Headers(init.headers)
   headers.set('content-type', 'application/json; charset=utf-8')
-  headers.set('cache-control', 'no-store')
+  if (!headers.has('cache-control')) headers.set('cache-control', 'no-store')
   headers.set('x-content-type-options', 'nosniff')
   headers.set('referrer-policy', 'no-referrer')
   return new Response(JSON.stringify(data), { ...init, headers })
@@ -960,6 +962,46 @@ async function handleDictionarySuggestions(
   })
 }
 
+async function handleExamDictionaryCatalog(
+  request: Request,
+  env: Env,
+): Promise<Response> {
+  if (request.method !== 'GET') return methodNotAllowed('GET')
+  return json(
+    { data: await getExamDictionaryCatalog(env.DB) },
+    {
+      headers: {
+        'cache-control': 'private, max-age=300, stale-while-revalidate=86400',
+      },
+    },
+  )
+}
+
+async function handleExamDictionaryBrowse(
+  request: Request,
+  env: Env,
+  slug: string,
+): Promise<Response> {
+  if (request.method !== 'GET') return methodNotAllowed('GET')
+  const url = new URL(request.url)
+  return json(
+    {
+      data: await browseExamDictionary({
+        db: env.DB,
+        rawSlug: slug,
+        rawLetter: url.searchParams.get('letter') ?? 'A',
+        rawCursor: url.searchParams.get('cursor') ?? undefined,
+        rawLimit: url.searchParams.get('limit') ?? undefined,
+      }),
+    },
+    {
+      headers: {
+        'cache-control': 'private, max-age=300, stale-while-revalidate=86400',
+      },
+    },
+  )
+}
+
 async function handleSaveDictionaryTerm(
   request: Request,
   env: Env,
@@ -1033,6 +1075,12 @@ async function handleAccount(request: Request, env: Env): Promise<Response> {
 
 async function routeApi(request: Request, env: Env): Promise<Response> {
   const path = new URL(request.url).pathname
+  const examDictionaryMatch = path.match(
+    /^\/api\/dictionary\/exam-lists\/([a-z0-9-]+)$/,
+  )
+  if (examDictionaryMatch) {
+    return handleExamDictionaryBrowse(request, env, examDictionaryMatch[1])
+  }
   const mistakeMatch = path.match(/^\/api\/mistakes\/([^/]+)$/)
   if (mistakeMatch) return handleMistake(request, env, mistakeMatch[1])
   const answerMatch = path.match(/^\/api\/quiz\/sessions\/([^/]+)\/answers$/)
@@ -1078,6 +1126,8 @@ async function routeApi(request: Request, env: Env): Promise<Response> {
       return handleDictionaryHistory(request, env)
     case '/api/dictionary/suggestions':
       return handleDictionarySuggestions(request, env)
+    case '/api/dictionary/exam-lists':
+      return handleExamDictionaryCatalog(request, env)
     case '/api/dictionary/favorites':
       return handleSaveDictionaryTerm(request, env, 'favorite')
     case '/api/dictionary/review-queue':

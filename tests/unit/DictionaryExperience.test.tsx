@@ -107,6 +107,59 @@ function mockHistoryAndLookup(lookup: () => Promise<Response>) {
       if (url === '/api/dictionary/history') {
         return Promise.resolve(Response.json({ data: [] }))
       }
+      if (url === '/api/dictionary/exam-lists') {
+        return Promise.resolve(
+          Response.json({
+            data: {
+              lists: [
+                {
+                  slug: 'cet4',
+                  name: '大学英语四级备考词典',
+                  shortName: 'CET-4',
+                  description: '四级常见词汇。',
+                  source: {
+                    name: 'ECDICT',
+                    url: 'https://github.com/skywind3000/ECDICT',
+                    license: 'MIT',
+                  },
+                  entryCount: 2,
+                  letterCounts: { A: 2 },
+                  updatedAt: '2026-08-24T00:00:00.000Z',
+                },
+              ],
+            },
+          }),
+        )
+      }
+      if (url.startsWith('/api/dictionary/exam-lists/cet4?')) {
+        return Promise.resolve(
+          Response.json({
+            data: {
+              list: {
+                slug: 'cet4',
+                name: '大学英语四级备考词典',
+                shortName: 'CET-4',
+                description: '四级常见词汇。',
+                source: {
+                  name: 'ECDICT',
+                  url: 'https://github.com/skywind3000/ECDICT',
+                  license: 'MIT',
+                },
+                entryCount: 2,
+                letterCounts: { A: 2 },
+                updatedAt: '2026-08-24T00:00:00.000Z',
+              },
+              letter: 'A',
+              letterEntryCount: 2,
+              words: [
+                { word: 'abandon', normalizedWord: 'abandon', rank: 1 },
+                { word: 'ability', normalizedWord: 'ability', rank: 2 },
+              ],
+              hasMore: false,
+            },
+          }),
+        )
+      }
       if (url.startsWith('/api/dictionary?')) return lookup()
       return Promise.resolve(Response.json({ data: { saved: true } }))
     }),
@@ -114,6 +167,33 @@ function mockHistoryAndLookup(lookup: () => Promise<Response>) {
 }
 
 describe('DictionaryExperience', () => {
+  it('browses a selected exam dictionary by A–Z and opens a full entry', async () => {
+    mockHistoryAndLookup(() =>
+      Promise.resolve(
+        Response.json({
+          data: { ...result, normalizedTerm: 'abandon' },
+        }),
+      ),
+    )
+    render(<DictionaryExperience />)
+
+    fireEvent.click(
+      await screen.findByRole('button', { name: /CET-4.*大学英语四级/ }),
+    )
+    expect(
+      await screen.findByRole('navigation', { name: 'CET-4 字母索引' }),
+    ).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'A，2 词' })).toHaveAttribute(
+      'aria-pressed',
+      'true',
+    )
+    fireEvent.click(await screen.findByRole('button', { name: /abandon/ }))
+    expect(
+      await screen.findByLabelText('abandon 的词典结果'),
+    ).toBeInTheDocument()
+    expect(screen.getByLabelText('搜索英语单词或短语')).toHaveValue('abandon')
+  })
+
   it('shows loading, all entries/senses, missing-example and stale-cache states', async () => {
     let resolveLookup: ((value: Response) => void) | undefined
     mockHistoryAndLookup(
