@@ -107,6 +107,10 @@ export type DailyContentPayload = {
     kind: 'word' | 'phrase' | 'expression'
     term: string
     partOfSpeech?: string
+    meaningGroups?: Array<{
+      partOfSpeech: string
+      meaningsZh: string[]
+    }>
     definition: string
     definitionZh?: string
     example: string

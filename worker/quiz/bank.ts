@@ -69,11 +69,65 @@ const optionMeaningsZh: Record<string, string> = {
   exclusive: '专属的；排他的',
 }
 
+const optionOriginalsEn: Record<string, string> = {
+  有韧性且能恢复的: 'resilient',
+  昂贵而罕见的: 'costly and rare',
+  过度依赖的: 'overly dependent',
+  短暂无效的: 'temporarily ineffective',
+  含糊的: 'ambiguous',
+  令人信服的: 'compelling',
+  未经证实的: 'unverified',
+  相互矛盾的: 'contradictory',
+  根本性的: 'fundamental',
+  难以测量的: 'hard to measure',
+  轻微的: 'marginal',
+  永久的: 'permanent',
+  切实可行的: 'viable',
+  法律禁止的: 'legally prohibited',
+  高度理想化的: 'highly idealised',
+  短期流行的: 'temporarily popular',
+  在不同需求之间取得平衡: 'strike a balance',
+  取消两个目标: 'abandon both goals',
+  优先追求经济增长: 'prioritise economic growth',
+  把决定推迟: 'postpone the decision',
+  立即: 'immediately',
+  从长远来看: 'in the long run',
+  在紧急情况下: 'in an emergency',
+  偶尔: 'occasionally',
+  '与……一致': 'be consistent with',
+  '取决于……': 'depend on',
+  '与……冲突': 'be at odds with',
+  '补充……': 'complement',
+  阻碍: 'hinder',
+  '为……创造条件': 'pave the way for',
+  衡量: 'measure',
+  取代: 'replace',
+  坦率而诚实的: 'candid',
+  含蓄且模糊的: 'reserved and vague',
+  已经过时的: 'outdated',
+  带有敌意的: 'hostile',
+  运行缓慢的: 'slow-running',
+  不透明且难以理解的: 'opaque',
+  完全开放的: 'fully transparent',
+  高度准确的: 'highly accurate',
+  保有自主选择和行动能力: 'retain agency',
+  把决定完全交给系统: 'cede control to the system',
+  隐藏自己的身份: 'hide one’s identity',
+  提高网络速度: 'increase network speed',
+}
+
 function optionMeaningZh(label: string): string {
   if (/\p{Script=Han}/u.test(label)) return label
   const meaning = optionMeaningsZh[label]
   if (!meaning) throw new Error(`Missing Chinese option meaning: ${label}`)
   return meaning
+}
+
+function optionOriginalText(label: string): string {
+  if (!/\p{Script=Han}/u.test(label)) return label
+  const original = optionOriginalsEn[label]
+  if (!original) throw new Error(`Missing original English option: ${label}`)
+  return original
 }
 
 const choice = (
@@ -108,6 +162,9 @@ const choice = (
     ),
     optionMeanings: Object.fromEntries(
       options.map(([optionId, label]) => [optionId, optionMeaningZh(label)]),
+    ),
+    optionOriginals: Object.fromEntries(
+      options.map(([optionId, label]) => [optionId, optionOriginalText(label)]),
     ),
   },
   theme,

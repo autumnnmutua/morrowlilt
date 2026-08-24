@@ -102,6 +102,7 @@ function parseAnswerAnalysis(value: string): AnswerAnalysis {
         reasoning: string
         optionReasons?: unknown
         optionMeanings?: unknown
+        optionOriginals?: unknown
       }
       const optionReasons =
         typeof record.optionReasons === 'object' &&
@@ -125,7 +126,23 @@ function parseAnswerAnalysis(value: string): AnswerAnalysis {
               ),
             )
           : undefined
-      return { reasoning: record.reasoning, optionReasons, optionMeanings }
+      const optionOriginals =
+        typeof record.optionOriginals === 'object' &&
+        record.optionOriginals !== null &&
+        !Array.isArray(record.optionOriginals)
+          ? Object.fromEntries(
+              Object.entries(record.optionOriginals).filter(
+                (entry): entry is [string, string] =>
+                  typeof entry[1] === 'string',
+              ),
+            )
+          : undefined
+      return {
+        reasoning: record.reasoning,
+        optionReasons,
+        optionMeanings,
+        optionOriginals,
+      }
     }
   } catch {
     // Older rows fall back to the stored explanation below.
@@ -533,6 +550,10 @@ async function buildReport(
         ...canonicalAnalysis?.optionMeanings,
         ...storedAnalysis.optionMeanings,
       },
+      optionOriginals: {
+        ...canonicalAnalysis?.optionOriginals,
+        ...storedAnalysis.optionOriginals,
+      },
     }
     const rawResponse = answer ? String(JSON.parse(answer.response_json)) : ''
     const rawStandardAnswer = String(JSON.parse(question.standard_answer_json))
@@ -558,6 +579,7 @@ async function buildReport(
         return {
           id: option.id,
           label: option.label,
+          originalText: analysis.optionOriginals?.[option.id] ?? option.label,
           meaningZh,
           reason:
             analysis.optionReasons?.[option.id] ??
@@ -571,7 +593,8 @@ async function buildReport(
     const eliminationSteps = optionAnalyses
       .filter((option) => !option.isCorrect)
       .map(
-        (option) => `${option.label}（${option.meaningZh}）：${option.reason}`,
+        (option) =>
+          `${option.originalText}：${option.meaningZh}。${option.reason}`,
       )
     return {
       questionId: question.id,

@@ -40,6 +40,16 @@ function createTodayData(): TodayData {
           kind: 'word' as const,
           term: 'resilient',
           partOfSpeech: '形容词',
+          meaningGroups: [
+            {
+              partOfSpeech: 'adj.',
+              meaningsZh: ['有韧性的', '能迅速恢复的'],
+            },
+            {
+              partOfSpeech: 'n.',
+              meaningsZh: ['恢复力强的人或事物'],
+            },
+          ],
           definition: 'able to recover from difficulty',
           definitionZh: '有韧性的；能够从困难中恢复的',
           example: 'A resilient learner returns after a difficult day.',
@@ -187,6 +197,10 @@ describe('MorrowLilt application skeleton', () => {
     expect(screen.getByText('语法与语用')).toBeInTheDocument()
     expect(screen.getByText('常用搭配')).toBeInTheDocument()
     expect(screen.getByText('替换表达')).toBeInTheDocument()
+    expect(screen.getByText('adj.')).toBeInTheDocument()
+    expect(screen.getByText('有韧性的；能迅速恢复的；')).toBeInTheDocument()
+    expect(screen.getByText('n.')).toBeInTheDocument()
+    expect(screen.queryByText('形容词 adjective')).not.toBeInTheDocument()
     expect(
       screen.getAllByText('当前浏览器未提供系统发音。').length,
     ).toBeGreaterThanOrEqual(1)

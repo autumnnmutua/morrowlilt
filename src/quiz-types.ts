@@ -48,6 +48,7 @@ export type QuizReportItem = {
   optionAnalyses: Array<{
     id: string
     label: string
+    originalText: string
     meaningZh: string
     reason: string
     isCorrect: boolean

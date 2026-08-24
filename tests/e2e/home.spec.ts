@@ -35,6 +35,12 @@ test('all core page skeletons are reachable and accessible', async ({
       await expect(
         page.getByRole('button', { name: '开始错题复测' }),
       ).toBeVisible()
+      const actionCard = page.locator('.review-action-card')
+      await expect(actionCard).toBeVisible()
+      expect((await actionCard.boundingBox())?.height ?? 0).toBeGreaterThan(112)
+      await actionCard.screenshot({
+        path: 'test-results/visual/morrowlilt-review-action.png',
+      })
     }
     const results = await new AxeBuilder({ page }).analyze()
     expect(
@@ -202,6 +208,10 @@ test('mobile navigation, touch targets and backlog summaries remain usable', asy
     page.getByText('今日学习包', { exact: true }).first(),
   ).toBeVisible()
   await expect(page.getByText('今日地道表达 · 3 条')).toBeVisible()
+  await expect(page.locator('.vocabulary-meaning-list').first()).toBeVisible()
+  await expect(page.locator('.vocabulary-meaning-list dt').first()).toHaveText(
+    /^(?:n|v|vt|vi|adj|adv|aux|pron|prep|conj|phr|expr|word)\.$/,
+  )
   await expect(
     page.getByRole('button', { name: '整个待学包已学习' }).first(),
   ).toBeVisible()

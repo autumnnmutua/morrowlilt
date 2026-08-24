@@ -14,6 +14,7 @@ export type AnswerAnalysis = {
   reasoning: string
   optionReasons?: Record<string, string>
   optionMeanings?: Record<string, string>
+  optionOriginals?: Record<string, string>
 }
 
 export type PublicQuestion = {
@@ -74,6 +75,7 @@ export type QuizReportItem = {
   optionAnalyses: Array<{
     id: string
     label: string
+    originalText: string
     meaningZh: string
     reason: string
     isCorrect: boolean

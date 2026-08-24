@@ -35,6 +35,11 @@ type ExamLexemeRow = {
   source_license: string
 }
 
+export type VocabularyMeaningGroup = {
+  partOfSpeech: string
+  meaningsZh: string[]
+}
+
 const partLabels: Record<string, string> = {
   n: 'noun',
   v: 'verb',
@@ -170,6 +175,27 @@ function normalizedPartLabel(raw: string): string {
   return partLabels[raw.toLowerCase()] ?? raw.toLowerCase()
 }
 
+export function abbreviatePartOfSpeech(value?: string): string {
+  const normalized = value?.trim().toLowerCase() ?? ''
+  if (/\bvi\b|intransitive|不及物/.test(normalized)) return 'vi.'
+  if (/\bvt\b|transitive|及物/.test(normalized)) return 'vt.'
+  if (/\baux\b|auxiliary|助动词/.test(normalized)) return 'aux.'
+  if (/\badj\b|adjective|形容词/.test(normalized)) return 'adj.'
+  if (/\badv\b|adverb|副词/.test(normalized)) return 'adv.'
+  if (/\bpron\b|pronoun|代词/.test(normalized)) return 'pron.'
+  if (/\bprep\b|preposition|介词/.test(normalized)) return 'prep.'
+  if (/\bconj\b|conjunction|连词/.test(normalized)) return 'conj.'
+  if (/\bdet\b|determiner|限定词/.test(normalized)) return 'det.'
+  if (/\bint\b|interjection|感叹词/.test(normalized)) return 'int.'
+  if (/\bnum\b|numeral|数词/.test(normalized)) return 'num.'
+  if (/\babbr\b|abbreviation|缩写/.test(normalized)) return 'abbr.'
+  if (/\bn\b|noun|名词/.test(normalized)) return 'n.'
+  if (/\bv\b|verb|动词/.test(normalized)) return 'v.'
+  if (/phrase|短语/.test(normalized)) return 'phr.'
+  if (/expression|表达/.test(normalized)) return 'expr.'
+  return 'word.'
+}
+
 function splitDefinitions(value: string): Array<{
   part: string
   text: string
@@ -196,6 +222,64 @@ function partsFromPosition(value: string): string[] {
     .map((item) => item.split(':')[0]?.trim())
     .filter((item): item is string => Boolean(item))
     .map(normalizedPartLabel)
+}
+
+function meaningGroupsFromRow(row: ExamLexemeRow): VocabularyMeaningGroup[] {
+  const definitions = splitDefinitions(row.chinese_translation)
+  const positionParts = partsFromPosition(row.parts_of_speech)
+  const explicitParts = definitions
+    .map((item) => item.part)
+    .filter((part) => part !== 'other')
+  const labels = [...new Set([...explicitParts, ...positionParts])]
+  const fallbackPart = labels.length === 1 ? labels[0] : 'other'
+  const grouped = new Map<string, string[]>()
+  for (const item of definitions) {
+    const part = item.part === 'other' ? fallbackPart : item.part
+    const values = grouped.get(part) ?? []
+    if (!values.includes(item.text)) values.push(item.text)
+    grouped.set(part, values)
+  }
+  return [...grouped.entries()]
+    .filter(([, meaningsZh]) => meaningsZh.length > 0)
+    .map(([part, meaningsZh]) => ({
+      partOfSpeech: abbreviatePartOfSpeech(part),
+      meaningsZh,
+    }))
+}
+
+export async function lookupExamMeaningGroups(
+  db: D1Database,
+  normalizedWords: string[],
+): Promise<Map<string, VocabularyMeaningGroup[]>> {
+  const words = [
+    ...new Set(
+      normalizedWords
+        .map((word) => word.normalize('NFKC').trim().toLowerCase())
+        .filter((word) => word.length > 0 && word.length <= 120),
+    ),
+  ]
+  const groups = new Map<string, VocabularyMeaningGroup[]>()
+  for (let start = 0; start < words.length; start += 80) {
+    const chunk = words.slice(start, start + 80)
+    const placeholders = chunk.map(() => '?').join(', ')
+    const result = await db
+      .prepare(
+        `SELECT normalized_word, display_word, phonetic, english_definition,
+                chinese_translation, parts_of_speech, exchange, source_name,
+                source_url, source_license
+         FROM dictionary_exam_lexemes
+         WHERE normalized_word IN (${placeholders})`,
+      )
+      .bind(...chunk)
+      .all<ExamLexemeRow>()
+    for (const row of result.results) {
+      const meaningGroups = meaningGroupsFromRow(row)
+      if (meaningGroups.length > 0) {
+        groups.set(row.normalized_word, meaningGroups)
+      }
+    }
+  }
+  return groups
 }
 
 function buildParts(row: ExamLexemeRow): DictionaryPartOfSpeech[] {

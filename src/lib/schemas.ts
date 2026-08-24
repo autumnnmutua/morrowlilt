@@ -19,6 +19,14 @@ const vocabularyItemSchema = z.object({
   kind: z.enum(['word', 'phrase', 'expression']),
   term: nonEmpty,
   partOfSpeech: nonEmpty.optional(),
+  meaningGroups: z
+    .array(
+      z.object({
+        partOfSpeech: nonEmpty,
+        meaningsZh: z.array(nonEmpty).min(1),
+      }),
+    )
+    .optional(),
   definition: nonEmpty,
   definitionZh: nonEmpty.optional(),
   example: nonEmpty,
@@ -199,6 +207,7 @@ export const quizReportSchema = z.object({
         z.object({
           id: nonEmpty,
           label: nonEmpty,
+          originalText: nonEmpty,
           meaningZh: nonEmpty,
           reason: nonEmpty,
           isCorrect: z.boolean(),

@@ -233,11 +233,12 @@ export function QuizReportPanel({
                           key={option.id}
                         >
                           <p>
-                            <strong>
-                              {String.fromCharCode(65 + optionIndex)}.{' '}
-                              {option.label}
-                            </strong>
-                            <span>中文：{option.meaningZh}</span>
+                            <span className="option-analysis__label">
+                              {String.fromCharCode(65 + optionIndex)}
+                            </span>
+                            <strong lang="en">{option.originalText}</strong>
+                            <span aria-hidden="true">：</span>
+                            <span>{option.meaningZh}</span>
                           </p>
                           <p>
                             {option.reason}
@@ -766,14 +767,17 @@ export function MistakeReviewPage({
         aria-labelledby="review-action-title"
         className="review-action-card"
       >
-        <div>
-          <p className="eyebrow">优先操作</p>
-          <h2 id="review-action-title">复测当前错题</h2>
-          <p>
-            {items
-              ? `当前有 ${items.filter((item) => item.status === 'active').length} 项待复习。`
-              : '正在统计待复习项目…'}
-          </p>
+        <div className="review-action-card__copy">
+          <span className="review-action-card__kicker">优先操作</span>
+          <div className="review-action-card__heading">
+            <h2 id="review-action-title">复测当前错题</h2>
+            <span className="review-action-card__count">
+              {items
+                ? `${items.filter((item) => item.status === 'active').length} 项待复习`
+                : '正在统计'}
+            </span>
+          </div>
+          <p>从当前薄弱项开始一轮短复测，完成后会更新掌握度。</p>
         </div>
         <button
           className="button button--primary review-start-button"
@@ -783,7 +787,7 @@ export function MistakeReviewPage({
           onClick={() => void startReview()}
           type="button"
         >
-          {starting ? '正在创建…' : '开始错题复测'}
+          {starting ? '正在创建…' : '开始错题复测 →'}
         </button>
       </section>
       <div className="review-queue">
