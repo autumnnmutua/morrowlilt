@@ -45,6 +45,14 @@ export type QuizReportItem = {
   explanation: string
   responseExplanation: string
   eliminationSteps: string[]
+  optionAnalyses: Array<{
+    id: string
+    label: string
+    meaningZh: string
+    reason: string
+    isCorrect: boolean
+    isSelected: boolean
+  }>
   isCorrect: boolean
   score: number
   durationMs: number

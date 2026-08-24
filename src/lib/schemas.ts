@@ -155,6 +155,9 @@ export const quizSessionSchema = z.object({
   questions: z.array(quizQuestionSchema),
 })
 
+export const quizResetSchema = z.object({ reset: z.literal(true) })
+export const quizReportDeleteSchema = z.object({ deleted: z.literal(true) })
+
 const reportDimension = z.object({
   key: nonEmpty,
   correct: z.number().int().nonnegative(),
@@ -192,6 +195,16 @@ export const quizReportSchema = z.object({
       explanation: nonEmpty,
       responseExplanation: nonEmpty,
       eliminationSteps: z.array(nonEmpty),
+      optionAnalyses: z.array(
+        z.object({
+          id: nonEmpty,
+          label: nonEmpty,
+          meaningZh: nonEmpty,
+          reason: nonEmpty,
+          isCorrect: z.boolean(),
+          isSelected: z.boolean(),
+        }),
+      ),
       isCorrect: z.boolean(),
       score: z.number().nonnegative(),
       durationMs: z.number().int().nonnegative(),
@@ -225,6 +238,7 @@ export const dictionaryResultSchema = z.object({
       headword: nonEmpty,
       phonetic: z.string().optional(),
       chineseSummary: z.string().min(1).optional(),
+      chineseSummaryLines: z.array(nonEmpty).optional(),
       pronunciations: z.array(
         z.object({
           text: z.string().optional(),
@@ -282,6 +296,13 @@ export const dictionaryHistorySchema = z.array(
     term: nonEmpty,
     searchCount: z.number().int().positive(),
     lastSearchedAt: nonEmpty,
+  }),
+)
+
+export const dictionaryFavoritesSchema = z.array(
+  z.object({
+    term: nonEmpty,
+    createdAt: nonEmpty,
   }),
 )
 

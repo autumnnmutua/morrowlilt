@@ -41,6 +41,7 @@ type SessionRow = {
   question_fingerprint: string
   degraded_reason: string | null
   started_at: string
+  report_deleted_at: string | null
 }
 
 type QuestionRow = {
@@ -100,6 +101,7 @@ function parseAnswerAnalysis(value: string): AnswerAnalysis {
       const record = parsed as {
         reasoning: string
         optionReasons?: unknown
+        optionMeanings?: unknown
       }
       const optionReasons =
         typeof record.optionReasons === 'object' &&
@@ -112,7 +114,18 @@ function parseAnswerAnalysis(value: string): AnswerAnalysis {
               ),
             )
           : undefined
-      return { reasoning: record.reasoning, optionReasons }
+      const optionMeanings =
+        typeof record.optionMeanings === 'object' &&
+        record.optionMeanings !== null &&
+        !Array.isArray(record.optionMeanings)
+          ? Object.fromEntries(
+              Object.entries(record.optionMeanings).filter(
+                (entry): entry is [string, string] =>
+                  typeof entry[1] === 'string',
+              ),
+            )
+          : undefined
+      return { reasoning: record.reasoning, optionReasons, optionMeanings }
     }
   } catch {
     // Older rows fall back to the stored explanation below.
@@ -189,7 +202,8 @@ async function getSession(
   return (
     (await db
       .prepare(
-        `SELECT id, mode, status, question_fingerprint, degraded_reason, started_at
+        `SELECT id, mode, status, question_fingerprint, degraded_reason, started_at,
+                report_deleted_at
          FROM quiz_sessions WHERE id = ? AND profile_id = ? LIMIT 1`,
       )
       .bind(sessionId, profileId)
@@ -228,7 +242,8 @@ export async function createQuizSession(input: {
 }): Promise<QuizSessionView> {
   const existing = await input.db
     .prepare(
-      `SELECT id, mode, status, question_fingerprint, degraded_reason, started_at
+      `SELECT id, mode, status, question_fingerprint, degraded_reason, started_at,
+              report_deleted_at
        FROM quiz_sessions WHERE profile_id = ? AND idempotency_key = ? LIMIT 1`,
     )
     .bind(input.profileId, input.idempotencyKey)
@@ -360,7 +375,8 @@ export async function getActiveQuizSession(
 ): Promise<QuizSessionView | undefined> {
   const row = await db
     .prepare(
-      `SELECT id, mode, status, question_fingerprint, degraded_reason, started_at
+      `SELECT id, mode, status, question_fingerprint, degraded_reason, started_at,
+              report_deleted_at
        FROM quiz_sessions WHERE profile_id = ? AND status = 'in_progress'
        ORDER BY last_activity_at DESC LIMIT 1`,
     )
@@ -503,7 +519,21 @@ async function buildReport(
   const items: QuizReportItem[] = questions.map((question) => {
     const answer = answerMap.get(question.id)
     const visible = publicQuestion(question)
-    const analysis = parseAnswerAnalysis(question.answer_analysis_json)
+    const storedAnalysis = parseAnswerAnalysis(question.answer_analysis_json)
+    const canonicalAnalysis = getBankQuestion(
+      question.bank_question_id,
+    )?.answerAnalysis
+    const analysis: AnswerAnalysis = {
+      reasoning: storedAnalysis.reasoning,
+      optionReasons: {
+        ...canonicalAnalysis?.optionReasons,
+        ...storedAnalysis.optionReasons,
+      },
+      optionMeanings: {
+        ...canonicalAnalysis?.optionMeanings,
+        ...storedAnalysis.optionMeanings,
+      },
+    }
     const rawResponse = answer ? String(JSON.parse(answer.response_json)) : ''
     const rawStandardAnswer = String(JSON.parse(question.standard_answer_json))
     const selectedOption = visible.options?.find(
@@ -517,13 +547,32 @@ async function buildReport(
       : answer?.is_correct === 1
         ? `你的答案符合可接受答案。${analysis.reasoning}`
         : `“${rawResponse || '未作答'}”未满足本题要求。${analysis.reasoning}`
-    const eliminationSteps =
-      visible.options
-        ?.filter((option) => option.id !== rawStandardAnswer)
-        .map(
-          (option) =>
-            `${option.label}：${analysis.optionReasons?.[option.id] ?? '与题干语义、语法结构或固定搭配不一致。'}`,
-        ) ?? []
+    const optionAnalyses =
+      visible.options?.map((option) => {
+        const meaningZh =
+          analysis.optionMeanings?.[option.id] ??
+          (/\p{Script=Han}/u.test(option.label)
+            ? option.label
+            : `“${option.label}”在本题语境中的中文含义`)
+        const isCorrect = option.id === rawStandardAnswer
+        return {
+          id: option.id,
+          label: option.label,
+          meaningZh,
+          reason:
+            analysis.optionReasons?.[option.id] ??
+            (isCorrect
+              ? `该选项表示“${meaningZh}”，符合本题考查点。${question.explanation}`
+              : `该选项表示“${meaningZh}”，放入本句后不能准确表达题干要求；${question.explanation}`),
+          isCorrect,
+          isSelected: option.id === rawResponse,
+        }
+      }) ?? []
+    const eliminationSteps = optionAnalyses
+      .filter((option) => !option.isCorrect)
+      .map(
+        (option) => `${option.label}（${option.meaningZh}）：${option.reason}`,
+      )
     return {
       questionId: question.id,
       bankQuestionId: question.bank_question_id,
@@ -537,6 +586,7 @@ async function buildReport(
       explanation: question.explanation,
       responseExplanation,
       eliminationSteps,
+      optionAnalyses,
       isCorrect: answer?.is_correct === 1,
       score: answer?.score ?? 0,
       durationMs: answer?.duration_ms ?? 0,
@@ -727,13 +777,15 @@ export async function getQuizReport(
     ? await getSession(db, profileId, sessionId)
     : ((await db
         .prepare(
-          `SELECT id, mode, status, question_fingerprint, degraded_reason, started_at
+          `SELECT id, mode, status, question_fingerprint, degraded_reason, started_at,
+                  report_deleted_at
            FROM quiz_sessions WHERE profile_id = ? AND status = 'completed'
+             AND report_deleted_at IS NULL
            ORDER BY completed_at DESC LIMIT 1`,
         )
         .bind(profileId)
         .first<SessionRow>()) ?? undefined)
-  if (!row) return undefined
+  if (!row || row.report_deleted_at) return undefined
   if (row.status !== 'completed') {
     throw new QuizDomainError(
       'QUIZ_NOT_COMPLETED',
@@ -742,6 +794,67 @@ export async function getQuizReport(
     )
   }
   return buildReport(db, row)
+}
+
+export async function abandonQuizSession(input: {
+  db: D1Database
+  profileId: string
+  sessionId: string
+}): Promise<{ reset: true }> {
+  const result = await input.db
+    .prepare(
+      `UPDATE quiz_sessions SET status = 'abandoned', last_activity_at = ?
+       WHERE id = ? AND profile_id = ? AND status = 'in_progress'`,
+    )
+    .bind(new Date().toISOString(), input.sessionId, input.profileId)
+    .run()
+  if (result.meta.changes !== 1) {
+    const owned = await input.db
+      .prepare(
+        `SELECT status FROM quiz_sessions
+         WHERE id = ? AND profile_id = ? LIMIT 1`,
+      )
+      .bind(input.sessionId, input.profileId)
+      .first<{ status: string }>()
+    if (owned?.status === 'abandoned') return { reset: true }
+    throw new QuizDomainError(
+      'QUIZ_SESSION_NOT_RESETTABLE',
+      'Active quiz session was not found',
+      404,
+    )
+  }
+  return { reset: true }
+}
+
+export async function deleteQuizReport(input: {
+  db: D1Database
+  profileId: string
+  sessionId: string
+}): Promise<{ deleted: true }> {
+  const result = await input.db
+    .prepare(
+      `UPDATE quiz_sessions SET report_deleted_at = ?
+       WHERE id = ? AND profile_id = ? AND status = 'completed'
+         AND report_deleted_at IS NULL`,
+    )
+    .bind(new Date().toISOString(), input.sessionId, input.profileId)
+    .run()
+  if (result.meta.changes !== 1) {
+    const owned = await input.db
+      .prepare(
+        `SELECT report_deleted_at FROM quiz_sessions
+         WHERE id = ? AND profile_id = ? AND status = 'completed' LIMIT 1`,
+      )
+      .bind(input.sessionId, input.profileId)
+      .first<{ report_deleted_at: string | null }>()
+    if (owned?.report_deleted_at) return { deleted: true }
+    throw new QuizDomainError(
+      'QUIZ_REPORT_NOT_FOUND',
+      'Quiz report was not found',
+      404,
+    )
+  }
+  return { deleted: true }
 }
 
 export async function listMistakes(db: D1Database, profileId: string) {

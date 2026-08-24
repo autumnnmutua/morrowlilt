@@ -135,6 +135,9 @@ beforeEach(() => {
       if (url === '/api/dictionary/history') {
         return Promise.resolve(Response.json({ data: [] }))
       }
+      if (url === '/api/dictionary/favorites') {
+        return Promise.resolve(Response.json({ data: [] }))
+      }
       if (url === '/api/settings') {
         return Promise.resolve(
           Response.json({ data: { learningTrack: 'academic' } }),
@@ -239,6 +242,13 @@ describe('MorrowLilt application skeleton', () => {
     expect(
       await screen.findByRole('heading', { level: 1, name: headingName }),
     ).toBeInTheDocument()
+  })
+
+  it('keeps test and review preferences out of general settings', async () => {
+    render(<App />)
+    fireEvent.click(screen.getAllByRole('button', { name: '设置' })[0])
+    await screen.findByRole('heading', { level: 1, name: '设置' })
+    expect(screen.queryByText('测试与巩固')).not.toBeInTheDocument()
   })
 
   it('shows a recoverable error state when today data cannot load', async () => {

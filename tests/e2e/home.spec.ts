@@ -28,6 +28,14 @@ test('all core page skeletons are reachable and accessible', async ({
     } else {
       await expect(page.locator('main h1')).toBeVisible()
     }
+    if (navigationLabel === '设置') {
+      await expect(page.getByText('测试与巩固')).toHaveCount(0)
+    }
+    if (navigationLabel === '错题巩固') {
+      await expect(
+        page.getByRole('button', { name: '开始错题复测' }),
+      ).toBeVisible()
+    }
     const results = await new AxeBuilder({ page }).analyze()
     expect(
       results.violations,
@@ -88,6 +96,12 @@ test('quiz answer is keyboard usable, secret-safe, and resumes after reload', as
   expect(overflow).toBeLessThanOrEqual(1)
   const results = await new AxeBuilder({ page }).analyze()
   expect(results.violations).toEqual([])
+
+  page.once('dialog', (dialog) => dialog.accept())
+  await page.getByRole('button', { name: '重置测试' }).click()
+  await expect(
+    page.getByRole('heading', { name: '创建一组新的高阶英语测试' }),
+  ).toBeVisible()
 })
 
 test('learning status is explicit and reversible on the same day', async ({
@@ -252,6 +266,13 @@ test('dictionary renders complete stale-cache results accessibly on a small scre
       },
     })
   })
+  await page.route('**/api/dictionary/favorites', async (route) => {
+    await route.fulfill({
+      json: {
+        data: [{ term: 'allocate', createdAt: '2026-08-20T00:00:00.000Z' }],
+      },
+    })
+  })
   const examList = {
     slug: 'ielts',
     name: 'IELTS 备考词典',
@@ -302,6 +323,7 @@ test('dictionary renders complete stale-cache results accessibly on a small scre
               headword: 'resilient',
               phonetic: '/rɪˈzɪliənt/',
               chineseSummary: 'adj.有韧性的；有弹性的',
+              chineseSummaryLines: ['adj.有韧性的；有弹性的；'],
               pronunciations: [],
               forms: [],
               inflections: [{ form: 'resilient', label: '原形' }],
@@ -368,6 +390,11 @@ test('dictionary renders complete stale-cache results accessibly on a small scre
   await page.setViewportSize({ width: 320, height: 720 })
   await page.goto('/')
   await page.getByRole('button', { name: '词典' }).last().click()
+  await expect(
+    page.getByRole('combobox', { name: '搜索英语单词或短语' }),
+  ).toHaveValue('')
+  await expect(page.getByRole('heading', { name: '我的收藏' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'allocate' })).toBeVisible()
   await expect(page.getByRole('heading', { name: '最近搜索' })).toBeVisible()
   await expect(
     page.getByRole('navigation', { name: '最近搜索词条' }),
@@ -393,7 +420,7 @@ test('dictionary renders complete stale-cache results accessibly on a small scre
   ).toBeVisible()
   await expect(page.getByText('Entry 1 / 2')).toBeVisible()
   await expect(page.getByText('Entry 2 / 2')).toBeVisible()
-  await expect(page.getByText('adj.有韧性的；有弹性的')).toBeVisible()
+  await expect(page.getByText('adj.有韧性的；有弹性的；')).toBeVisible()
   await expect(page.getByText('暂无来源例句').first()).toBeVisible()
   expect(
     await page.evaluate(

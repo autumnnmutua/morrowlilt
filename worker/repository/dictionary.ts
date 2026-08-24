@@ -121,6 +121,24 @@ export async function listDictionaryHistory(
   }))
 }
 
+export async function listDictionaryFavorites(
+  db: D1Database,
+  profileId: string,
+): Promise<Array<{ term: string; createdAt: string }>> {
+  const result = await db
+    .prepare(
+      `SELECT normalized_term, created_at
+       FROM dictionary_favorites WHERE profile_id = ?
+       ORDER BY created_at DESC LIMIT 100`,
+    )
+    .bind(profileId)
+    .all<{ normalized_term: string; created_at: string }>()
+  return result.results.map((row) => ({
+    term: row.normalized_term,
+    createdAt: row.created_at,
+  }))
+}
+
 export async function listHistorySuggestions(
   db: D1Database,
   profileId: string,

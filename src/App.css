@@ -1118,7 +1118,8 @@ progress::-moz-progress-bar {
   }
 }
 
-.dictionary-history {
+.dictionary-history,
+.dictionary-favorites {
   display: grid;
   gap: var(--space-3);
   margin: 0 0 var(--space-2);
@@ -1126,6 +1127,12 @@ progress::-moz-progress-bar {
   border: 1px solid var(--color-border);
   border-radius: var(--radius-content);
   background: var(--color-surface-muted);
+}
+
+.dictionary-favorites {
+  margin-bottom: var(--space-4);
+  border-color: var(--color-primary-border, var(--color-border-strong));
+  background: var(--color-primary-soft);
 }
 
 .dictionary-history__heading {
@@ -1569,6 +1576,94 @@ textarea {
   letter-spacing: 0.04em;
 }
 
+.dictionary-chinese-summary ul {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.dictionary-chinese-summary li {
+  margin: 0;
+  white-space: normal;
+}
+
+.report-actions {
+  justify-content: flex-end;
+  margin: calc(var(--space-4) * -1) 0 var(--space-4);
+}
+
+.option-analysis {
+  margin: var(--space-4) 0;
+  padding: var(--space-4);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-content);
+  background: var(--color-surface-muted);
+}
+
+.option-analysis ol {
+  display: grid;
+  gap: var(--space-3);
+  margin: var(--space-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.option-analysis li {
+  padding: var(--space-3);
+  border-left: 3px solid var(--color-border-strong);
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+  background: var(--color-surface);
+}
+
+.option-analysis li.option-analysis--correct {
+  border-left-color: var(--color-success);
+}
+
+.option-analysis p {
+  display: grid;
+  gap: var(--space-1);
+  margin: 0;
+}
+
+.option-analysis p + p {
+  margin-top: var(--space-2);
+  color: var(--color-text-muted);
+}
+
+.review-action-card {
+  display: grid;
+  gap: var(--space-4);
+  align-items: center;
+  margin-bottom: var(--space-5);
+  padding: var(--space-5);
+  border: 2px solid var(--color-primary);
+  border-radius: var(--radius-panel);
+  background: var(--color-primary-soft);
+  box-shadow: var(--shadow-panel);
+}
+
+.review-action-card h2,
+.review-action-card p {
+  margin: 0;
+}
+
+.review-action-card .eyebrow {
+  margin-bottom: var(--space-1);
+}
+
+.review-start-button {
+  min-height: 3.25rem;
+  padding-inline: var(--space-6);
+  font-size: var(--font-size-body);
+  box-shadow: var(--shadow-card);
+}
+
+.quiz-reset-button {
+  justify-self: start;
+}
+
 .part-of-speech {
   padding-top: var(--space-6);
 }
@@ -1835,10 +1930,13 @@ blockquote span {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }
 
-  .review-queue,
   .prep-panel {
     position: sticky;
     top: 5rem;
+  }
+
+  .review-action-card {
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 }
 

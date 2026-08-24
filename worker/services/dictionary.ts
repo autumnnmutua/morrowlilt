@@ -11,6 +11,7 @@ import {
   getSuggestionCache,
   listHistorySuggestions,
   listDictionaryHistory,
+  listDictionaryFavorites,
   recordDictionarySearch,
   saveCachedTranslations,
   saveDictionaryCache,
@@ -130,6 +131,9 @@ function publicResult(
 const chinesePartAbbreviations: Record<string, string> = {
   noun: 'n.',
   verb: 'v.',
+  'intransitive verb': 'vi.',
+  'transitive verb': 'vt.',
+  'auxiliary verb': 'aux.',
   adjective: 'adj.',
   adverb: 'adv.',
   pronoun: 'pron.',
@@ -153,20 +157,37 @@ function withChineseSummaries(
             part.senses
               .map((sense) => sense.translatedDefinition?.text.trim())
               .filter((text): text is string => Boolean(text))
-              .map((text) => text.replace(/[；;。，,\s]+$/u, '')),
+              .flatMap((text) =>
+                text
+                  .replace(/\\n/g, '\n')
+                  .split(/\r?\n/)
+                  .map((line) =>
+                    line
+                      .replace(/^[a-z]+\.\s*/iu, '')
+                      .replace(/[；;。，,\s]+$/u, '')
+                      .trim(),
+                  )
+                  .filter(Boolean),
+              ),
           ),
         ]
         if (definitions.length === 0) return []
         const normalizedLabel = part.label.trim().toLowerCase()
         const abbreviation =
           chinesePartAbbreviations[normalizedLabel] ?? `${normalizedLabel}.`
-        return [`${abbreviation}${definitions.join('；')}`]
+        return [{ abbreviation, definitions }]
       })
+      const summaryLines = groups.map(
+        (group) => `${group.abbreviation}${group.definitions.join('；')}；`,
+      )
       return {
         ...entry,
-        chineseSummary: groups.length
-          ? groups.join('；')
+        chineseSummary: summaryLines.length
+          ? summaryLines.join('\n')
           : entry.chineseSummary,
+        chineseSummaryLines: summaryLines.length
+          ? summaryLines
+          : entry.chineseSummaryLines,
       }
     }),
   }
@@ -762,4 +783,11 @@ export async function addDictionaryTerm(input: {
     provider: input.provider,
   })
   return { normalizedTerm, destination: input.destination, saved: true }
+}
+
+export async function getDictionaryFavorites(
+  db: D1Database,
+  profileId: string,
+) {
+  return listDictionaryFavorites(db, profileId)
 }

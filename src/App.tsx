@@ -1,11 +1,6 @@
 import { lazy, Suspense, useEffect, useState } from 'react'
 import './App.css'
 import { AppShell } from './components/AppShell'
-import {
-  LatestReportPage,
-  MistakeReviewPage,
-  QuizExperience,
-} from './components/QuizExperience'
 import { LearningPage, SettingsPage, TodayPage } from './pages/Pages'
 import type {
   HealthState,
@@ -22,6 +17,29 @@ const DictionaryExperience = lazy(async () => {
   const module = await import('./components/DictionaryExperience')
   return { default: module.DictionaryExperience }
 })
+
+const QuizExperience = lazy(async () => {
+  const module = await import('./components/QuizExperience')
+  return { default: module.QuizExperience }
+})
+
+const LatestReportPage = lazy(async () => {
+  const module = await import('./components/QuizExperience')
+  return { default: module.LatestReportPage }
+})
+
+const MistakeReviewPage = lazy(async () => {
+  const module = await import('./components/QuizExperience')
+  return { default: module.MistakeReviewPage }
+})
+
+function FeatureFallback({ label }: { label: string }) {
+  return (
+    <div aria-live="polite" className="page page--reading" role="status">
+      正在加载{label}…
+    </div>
+  )
+}
 
 function App() {
   const requestedPage = new URL(window.location.href).searchParams.get('view')
@@ -185,8 +203,16 @@ function App() {
     learning: (
       <LearningPage onRetry={() => void loadToday()} state={todayState} />
     ),
-    quiz: <QuizExperience onNavigate={navigate} />,
-    report: <LatestReportPage onNavigate={navigate} />,
+    quiz: (
+      <Suspense fallback={<FeatureFallback label="测试" />}>
+        <QuizExperience onNavigate={navigate} />
+      </Suspense>
+    ),
+    report: (
+      <Suspense fallback={<FeatureFallback label="结果报告" />}>
+        <LatestReportPage onNavigate={navigate} />
+      </Suspense>
+    ),
     dictionary: (
       <Suspense
         fallback={
@@ -198,7 +224,11 @@ function App() {
         <DictionaryExperience />
       </Suspense>
     ),
-    review: <MistakeReviewPage onNavigate={navigate} />,
+    review: (
+      <Suspense fallback={<FeatureFallback label="错题巩固" />}>
+        <MistakeReviewPage onNavigate={navigate} />
+      </Suspense>
+    ),
     settings: <SettingsPage onThemeChange={setTheme} theme={theme} />,
   }
 

@@ -38,9 +38,9 @@ type ExamLexemeRow = {
 const partLabels: Record<string, string> = {
   n: 'noun',
   v: 'verb',
-  vi: 'verb',
-  vt: 'verb',
-  aux: 'verb',
+  vi: 'intransitive verb',
+  vt: 'transitive verb',
+  aux: 'auxiliary verb',
   adj: 'adjective',
   a: 'adjective',
   adv: 'adverb',
@@ -176,7 +176,7 @@ function splitDefinitions(value: string): Array<{
 }> {
   const rows: Array<{ part: string; text: string }> = []
   let currentPart = 'other'
-  for (const rawLine of value.split(/\r?\n/)) {
+  for (const rawLine of value.replace(/\\n/g, '\n').split(/\r?\n/)) {
     const line = rawLine.trim()
     if (!line || /^\[(?:网络|其它|其他|Web)\]/i.test(line)) continue
     const match = line.match(/^([a-z]+)\.\s*(.+)$/i)

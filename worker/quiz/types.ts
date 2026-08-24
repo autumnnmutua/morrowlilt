@@ -13,6 +13,7 @@ export type QuestionOption = { id: string; label: string }
 export type AnswerAnalysis = {
   reasoning: string
   optionReasons?: Record<string, string>
+  optionMeanings?: Record<string, string>
 }
 
 export type PublicQuestion = {
@@ -70,6 +71,14 @@ export type QuizReportItem = {
   explanation: string
   responseExplanation: string
   eliminationSteps: string[]
+  optionAnalyses: Array<{
+    id: string
+    label: string
+    meaningZh: string
+    reason: string
+    isCorrect: boolean
+    isSelected: boolean
+  }>
   isCorrect: boolean
   score: number
   durationMs: number
