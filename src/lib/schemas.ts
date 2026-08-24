@@ -224,6 +224,7 @@ export const dictionaryResultSchema = z.object({
     z.object({
       headword: nonEmpty,
       phonetic: z.string().optional(),
+      chineseSummary: z.string().min(1).optional(),
       pronunciations: z.array(
         z.object({
           text: z.string().optional(),

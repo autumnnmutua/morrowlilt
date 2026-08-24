@@ -910,7 +910,9 @@ async function handleMistake(
 
 async function handleDictionary(request: Request, env: Env): Promise<Response> {
   if (request.method !== 'GET') return methodNotAllowed('GET')
-  const rawTerm = new URL(request.url).searchParams.get('term') ?? ''
+  const searchParams = new URL(request.url).searchParams
+  const rawTerm = searchParams.get('term') ?? ''
+  const quick = searchParams.get('mode') === 'quick'
   const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   const ai = getWorkersAiBinding(env)
   return json({
@@ -923,6 +925,7 @@ async function handleDictionary(request: Request, env: Env): Promise<Response> {
           ? new WorkersAiDictionaryTranslationProvider(ai)
           : undefined,
       rawTerm,
+      quick,
     }),
   })
 }

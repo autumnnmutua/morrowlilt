@@ -2,7 +2,7 @@
 
 ## 架构
 
-浏览器只请求同源 `GET /api/dictionary?term=...`。Worker 完成输入规范化、Provider 请求、结构校验、HTML 清理、D1 缓存和错误映射；前端不包含第三方 API 地址调用代码。
+浏览器只请求同源 `GET /api/dictionary?term=...`。Worker 完成输入规范化、Provider 请求、结构校验、HTML 清理、D1 缓存和错误映射；前端不包含第三方 API 地址调用代码。交互查询先请求 `mode=quick`，仅从 D1 双语词库读取并立即展示词头、音标和中文释义；随后请求完整模式，补充在线发音、全部 entries、词性、senses、例句和来源。快速结果不会写入搜索历史，完整请求成功后才计为一次搜索。
 
 `DictionaryProvider` 是可替换接口：
 
@@ -32,6 +32,8 @@
 `GET /api/dictionary/exam-lists` 只返回目录、实际词数和预计算的 A–Z 数量。`GET /api/dictionary/exam-lists/:slug?letter=A&cursor=...&limit=50` 使用 `(list_slug, initial, normalized_word)` 组合索引和 keyset cursor；不使用大偏移量，也不把整本词典或释义一次发到浏览器。每页默认 50、最多 100 词，界面显示该字母总数并允许继续加载全部内容。
 
 点击任一词头后仍调用完整词条查询：ECDICT 先提供音标、词性、中文释义与 exchange 词形，Open English WordNet 补充英文义项、例句和词汇关系，在线 Provider 可再补充发音与其他 entries。已有中文释义不会再次调用 TranslationProvider。
+
+每个 entry 会在音标后生成一行紧凑的中文释义摘要。摘要按词性聚合、去重并保留全部中文释义，例如 `n.施乐（品牌名）；影印；v.复印`；无法由来源可靠区分及物或不及物时统一显示 `v.`，不凭猜测标成 `vt.` 或 `vi.`。摘要只调整阅读顺序，不删除或改写后续逐义项内容。
 
 考试词表数据不进入前端 bundle，也不提交生成 SQL。`scripts/build-exam-dictionary-sql.mjs` 从部署者在仓库外准备的 ECDICT CSV 和词头 manifest 生成小于 700 KiB、可重复执行的 SQL 分片，适合本地或远程 D1 分批导入；远程导入由 D1 API 原子执行每个文件，因此分片不嵌套显式事务。词数是标准化、去重、过滤非英语词头后的实际结果。
 

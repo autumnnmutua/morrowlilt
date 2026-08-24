@@ -301,6 +301,7 @@ test('dictionary renders complete stale-cache results accessibly on a small scre
             {
               headword: 'resilient',
               phonetic: '/rɪˈzɪliənt/',
+              chineseSummary: 'adj.有韧性的；有弹性的',
               pronunciations: [],
               forms: [],
               inflections: [{ form: 'resilient', label: '原形' }],
@@ -367,6 +368,10 @@ test('dictionary renders complete stale-cache results accessibly on a small scre
   await page.setViewportSize({ width: 320, height: 720 })
   await page.goto('/')
   await page.getByRole('button', { name: '词典' }).last().click()
+  await expect(page.getByRole('heading', { name: '最近搜索' })).toBeVisible()
+  await expect(
+    page.getByRole('navigation', { name: '最近搜索词条' }),
+  ).toBeVisible()
   await page.getByRole('button', { name: /IELTS.*5,038 词/ }).click()
   await expect(
     page.getByRole('navigation', { name: 'IELTS 字母索引' }),
@@ -388,6 +393,7 @@ test('dictionary renders complete stale-cache results accessibly on a small scre
   ).toBeVisible()
   await expect(page.getByText('Entry 1 / 2')).toBeVisible()
   await expect(page.getByText('Entry 2 / 2')).toBeVisible()
+  await expect(page.getByText('adj.有韧性的；有弹性的')).toBeVisible()
   await expect(page.getByText('暂无来源例句').first()).toBeVisible()
   expect(
     await page.evaluate(
