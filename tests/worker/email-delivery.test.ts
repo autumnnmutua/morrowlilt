@@ -6,12 +6,14 @@ import type {
   EmailProvider,
 } from '../../worker/providers/contracts'
 import { ResendEmailProvider } from '../../worker/providers/resend'
+import { ensureAccountForIdentity } from '../../worker/repository/accounts'
 import {
   buildEmailDeliveryKey,
   getEmailDelivery,
   hashEmailRecipient,
 } from '../../worker/repository/email-delivery'
 import { ensureDailyContent } from '../../worker/services/daily-content'
+import { configureUserEmailProvider } from '../../worker/services/email-subscription'
 import { ensureAppProfile } from '../../worker/services/learning'
 import {
   deliverDailyEmail,
@@ -287,6 +289,52 @@ describe('scheduled and administrator email entry points', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
+  it('never lends the platform sender to a different profile with the same recipient', async () => {
+    const loginEmail = ['other-login', 'example.invalid'].join('@')
+    const account = await ensureAccountForIdentity({
+      db: env.DB,
+      identity: {
+        issuer: 'https://local.invalid',
+        subject: `other-${crypto.randomUUID()}`,
+        email: loginEmail,
+      },
+      defaultTimeZone: 'Asia/Shanghai',
+    })
+    const now = new Date('2026-11-11T12:00:00.000Z').toISOString()
+    await env.DB.prepare(
+      `INSERT INTO users (
+         id, profile_id, email, email_hash, timezone, email_status,
+         verification_token_hash, verification_expires_at, verified_at,
+         unsubscribed_at, version, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, 'Asia/Shanghai', 'verified', NULL, NULL, ?, NULL, 1, ?, ?)`,
+    )
+      .bind(
+        crypto.randomUUID(),
+        account.profileId,
+        recipient,
+        await hashEmailRecipient(recipient),
+        now,
+        now,
+        now,
+      )
+      .run()
+
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        Response.json({ id: 'platform-owner-message' }, { status: 200 }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await runScheduledDailyJob(Date.parse('2026-11-12T00:00:00.000Z'), env)
+
+    const delivery = await env.DB.prepare(
+      `SELECT profile_id FROM email_deliveries
+       WHERE content_date = '2026-11-12' AND delivery_type = 'scheduled'`,
+    ).first<{ profile_id: string }>()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(delivery?.profile_id).toBe('default')
+  })
+
   it('requires authorization for preview and defaults explicit tests to the Resend test target', async () => {
     const date = '2026-11-10'
     const unauthorized = await exports.default.fetch(
@@ -336,5 +384,65 @@ describe('scheduled and administrator email entry points', () => {
     await expect(sent.json()).resolves.toMatchObject({
       data: { contentDate: date, target: 'resend_test', outcome: 'sent' },
     })
+  })
+
+  it('keeps a default-profile BYO sender working when platform mail is absent', async () => {
+    const email = ['default-byo', 'example.invalid'].join('@')
+    const now = new Date('2026-11-13T09:00:00.000Z').toISOString()
+    await ensureAppProfile({
+      db: env.DB,
+      profileId: 'default',
+      timeZone: 'Asia/Shanghai',
+      now: new Date(now),
+    })
+    await env.DB.prepare(
+      `INSERT INTO users (
+         id, profile_id, email, email_hash, timezone, email_status,
+         verification_token_hash, verification_expires_at, verified_at,
+         unsubscribed_at, version, created_at, updated_at
+       ) VALUES (?, 'default', ?, ?, 'Asia/Shanghai', 'verified', NULL, NULL, ?, NULL, 1, ?, ?)`,
+    )
+      .bind(
+        crypto.randomUUID(),
+        email,
+        await hashEmailRecipient(email),
+        now,
+        now,
+        now,
+      )
+      .run()
+    const encryptionSecret = 'default-byo-encryption-secret-32-chars'
+    const byoApiKey = ['re', 'default', 'byo', 'fixture', 'key'].join('_')
+    await configureUserEmailProvider({
+      db: env.DB,
+      profileId: 'default',
+      apiKey: byoApiKey,
+      mailFrom,
+      sendHourLocal: 18,
+      encryptionSecret,
+    })
+
+    const fetchMock = vi.fn(
+      (request: RequestInfo | URL, init?: RequestInit) => {
+        void request
+        void init
+        return Promise.resolve(Response.json({ id: 'default-byo-message' }))
+      },
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await runScheduledDailyJob(Date.parse('2026-11-13T10:00:00.000Z'), {
+      ...env,
+      RESEND_API_KEY: '<PLACEHOLDER>',
+      RECIPIENT_EMAIL: '<PLACEHOLDER>',
+      MAIL_FROM: '<PLACEHOLDER>',
+      PUBLIC_SITE_URL: publicSiteUrl,
+      USER_SECRET_ENCRYPTION_KEY: encryptionSecret,
+    } as unknown as Env)
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const authorization = new Headers(
+      fetchMock.mock.calls[0]?.[1]?.headers,
+    ).get('authorization')
+    expect(authorization).toBe(`Bearer ${byoApiKey}`)
   })
 })

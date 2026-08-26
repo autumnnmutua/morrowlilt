@@ -369,7 +369,20 @@ export async function createQuizSession(input: {
         ),
     )
   })
-  await input.db.batch(statements)
+  try {
+    await input.db.batch(statements)
+  } catch (error) {
+    const concurrent = await input.db
+      .prepare(
+        `SELECT id, mode, status, question_fingerprint, degraded_reason, started_at,
+                report_deleted_at
+         FROM quiz_sessions WHERE profile_id = ? AND idempotency_key = ? LIMIT 1`,
+      )
+      .bind(input.profileId, input.idempotencyKey)
+      .first<SessionRow>()
+    if (concurrent) return sessionView(input.db, concurrent)
+    throw error
+  }
   if (generated.degradedReason) {
     console.warn(
       JSON.stringify({
@@ -654,13 +667,13 @@ async function buildReport(
   }
 }
 
-async function updateMistakes(
+async function prepareMistakeUpdates(
   db: D1Database,
   profileId: string,
   sessionId: string,
   report: QuizReport,
   businessDate: string,
-): Promise<void> {
+): Promise<D1PreparedStatement[]> {
   const now = new Date().toISOString()
   const bankQuestionIds = [
     ...new Set(report.items.map((item) => item.bankQuestionId)),
@@ -699,7 +712,12 @@ async function updateMistakes(
              id, profile_id, bank_question_id, status, error_count,
              correct_streak, mastery, first_wrong_at, last_reviewed_at,
              next_review_date, mastered_at, dismissed_at
-           ) VALUES (?, ?, ?, 'active', 1, 0, ?, ?, ?, date(?, '+1 day'), NULL, NULL)
+           )
+           SELECT ?, ?, ?, 'active', 1, 0, ?, ?, ?, date(?, '+1 day'), NULL, NULL
+           WHERE EXISTS (
+             SELECT 1 FROM quiz_sessions
+             WHERE id = ? AND profile_id = ? AND status = 'in_progress'
+           )
            ON CONFLICT(profile_id, bank_question_id) DO UPDATE SET
              status = ?,
              error_count = mistake_book.error_count + ?,
@@ -714,6 +732,8 @@ async function updateMistakes(
           now,
           now,
           businessDate,
+          sessionId,
+          profileId,
           mastered ? 'mastered' : 'active',
           item.isCorrect ? 0 : 1,
           streak,
@@ -727,7 +747,12 @@ async function updateMistakes(
         .prepare(
           `INSERT INTO mistake_book_events (
              id, mistake_id, session_id, outcome, mastery_before, mastery_after, created_at
-           ) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           )
+           SELECT ?, ?, ?, ?, ?, ?, ?
+           WHERE EXISTS (
+             SELECT 1 FROM quiz_sessions
+             WHERE id = ? AND profile_id = ? AND status = 'in_progress'
+           )`,
         )
         .bind(
           crypto.randomUUID(),
@@ -737,10 +762,12 @@ async function updateMistakes(
           before,
           after,
           now,
+          sessionId,
+          profileId,
         ),
     )
   }
-  if (statements.length > 0) await db.batch(statements)
+  return statements
 }
 
 export async function completeQuizSession(input: {
@@ -765,29 +792,32 @@ export async function completeQuizSession(input: {
       409,
     )
   }
-  await updateMistakes(
+  const now = new Date().toISOString()
+  const statements = await prepareMistakeUpdates(
     input.db,
     input.profileId,
     input.sessionId,
     report,
     input.businessDate,
   )
-  const now = new Date().toISOString()
-  await input.db
-    .prepare(
-      `UPDATE quiz_sessions SET status = 'completed', completed_at = ?,
+  statements.push(
+    input.db
+      .prepare(
+        `UPDATE quiz_sessions SET status = 'completed', completed_at = ?,
        last_activity_at = ?, total_score = ?, correct_count = ?, total_duration_ms = ?
-       WHERE id = ? AND status = 'in_progress'`,
-    )
-    .bind(
-      now,
-      now,
-      report.score,
-      report.correctCount,
-      report.totalDurationMs,
-      input.sessionId,
-    )
-    .run()
+       WHERE id = ? AND profile_id = ? AND status = 'in_progress'`,
+      )
+      .bind(
+        now,
+        now,
+        report.score,
+        report.correctCount,
+        report.totalDurationMs,
+        input.sessionId,
+        input.profileId,
+      ),
+  )
+  await input.db.batch(statements)
   return report
 }
 

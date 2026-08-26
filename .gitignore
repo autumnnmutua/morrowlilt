@@ -7,6 +7,7 @@ coverage/
 
 # Local runtime state and secrets
 .wrangler/
+.wrangler-dry-run/
 .dev.vars*
 .env*
 !.env.example

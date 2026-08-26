@@ -224,10 +224,7 @@ async function enrichWithChinese(
           event: 'dictionary_translation_failed',
           provider: provider.name,
           itemCount: missing.length,
-          code:
-            error instanceof Error
-              ? error.message.slice(0, 80)
-              : 'UNKNOWN_ERROR',
+          errorName: error instanceof Error ? error.name : 'UnknownError',
         }),
       )
       throw new DictionaryDomainError(

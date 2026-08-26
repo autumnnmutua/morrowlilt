@@ -66,4 +66,16 @@ describe('browser API client', () => {
     controller.abort()
     await expect(request).rejects.toHaveProperty('name', 'AbortError')
   })
+
+  it('does not start a request when its signal is already cancelled', async () => {
+    const fetchMock = vi.fn()
+    vi.stubGlobal('fetch', fetchMock)
+    const controller = new AbortController()
+    controller.abort()
+
+    await expect(
+      apiGet('/api/example', z.object({ ok: z.boolean() }), controller.signal),
+    ).rejects.toHaveProperty('name', 'AbortError')
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
 })

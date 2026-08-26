@@ -63,6 +63,7 @@ import {
   confirmEmailBinding,
   configureUserEmailProvider,
   EmailSubscriptionError,
+  normalizeEmail,
   readEmailSettingsWithProvider,
   readUserEmailProvider,
   requestEmailBinding,
@@ -448,13 +449,26 @@ async function handleEmailSettings(
         'Email binding requires only action and email',
       )
     }
+    const requestedEmail = normalizeEmail(body.email)
+    const platformRecipient = getResendConfig(env)?.recipientEmail
+    if (
+      profile.id !== 'default' &&
+      platformRecipient &&
+      requestedEmail === normalizeEmail(platformRecipient)
+    ) {
+      throw new EmailSubscriptionError(
+        'EMAIL_ALREADY_BOUND',
+        '该邮箱已经绑定到另一个账号',
+        409,
+      )
+    }
     const config = await getEmailSenderForProfile(env, profile.id)
     return json({
       data: await requestEmailBinding({
         db: env.DB,
         profileId: profile.id,
         timeZone: profile.timeZone,
-        rawEmail: body.email,
+        rawEmail: requestedEmail,
         idempotencyKey: requireIdempotencyKey(request),
         provider: new ResendEmailProvider(config.apiKey),
         mailFrom: config.mailFrom,
@@ -472,6 +486,7 @@ async function handleEmailSettings(
     return json({
       data: await confirmEmailBinding({
         db: env.DB,
+        profileId: profile.id,
         token: body.token,
         idempotencyKey: requireIdempotencyKey(request),
         timeZone: profile.timeZone,
@@ -1313,10 +1328,6 @@ export default {
           code: 'API_UNEXPECTED_ERROR',
           path: new URL(request.url).pathname,
           errorName: error instanceof Error ? error.name : 'UnknownError',
-          errorCode:
-            error instanceof Error
-              ? error.message.slice(0, 120)
-              : 'UNKNOWN_ERROR',
         }),
       )
       return json(

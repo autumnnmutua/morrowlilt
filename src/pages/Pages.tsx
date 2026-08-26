@@ -1206,6 +1206,11 @@ export function SettingsPage({
     const verificationToken = new URL(window.location.href).searchParams.get(
       'email_verify',
     )
+    if (verificationToken) {
+      const url = new URL(window.location.href)
+      url.searchParams.delete('email_verify')
+      window.history.replaceState({}, '', url)
+    }
     const operation = verificationToken
       ? apiMutation(
           '/api/email/settings',
@@ -1228,11 +1233,6 @@ export function SettingsPage({
             ? '邮箱已确认，每日邮件将在设定时间发送。'
             : '邮件设置已加载。',
         )
-        if (verificationToken) {
-          const url = new URL(window.location.href)
-          url.searchParams.delete('email_verify')
-          window.history.replaceState({}, '', url)
-        }
       })
       .catch((error: unknown) => {
         if (error instanceof DOMException && error.name === 'AbortError') return

@@ -302,10 +302,7 @@ export class WorkersAiDictionaryTranslationProvider implements DictionaryTransla
           console.warn(
             JSON.stringify({
               event: 'dictionary_translation_batch_fallback',
-              code:
-                error instanceof Error
-                  ? error.message.slice(0, 80)
-                  : 'UNKNOWN_ERROR',
+              errorName: error instanceof Error ? error.name : 'UnknownError',
               itemCount: chunk.texts.length,
             }),
           )

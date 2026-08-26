@@ -282,6 +282,7 @@ export async function requestEmailBinding(input: {
 
 export async function confirmEmailBinding(input: {
   db: D1Database
+  profileId: string
   token: string
   idempotencyKey: string
   timeZone: string
@@ -295,6 +296,7 @@ export async function confirmEmailBinding(input: {
   }
   const subscription = await verifyPendingEmailSubscription(
     input.db,
+    input.profileId,
     await sha256(input.token),
     input.idempotencyKey,
   )

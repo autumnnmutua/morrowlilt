@@ -15,7 +15,7 @@
     "test": "pnpm run test:unit && pnpm run test:worker",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:worker": "vitest run --config vitest.worker.config.ts",
-    "test:e2e": "playwright test",
+    "test:e2e": "pnpm run db:migrate:local && playwright test",
     "scan:public": "node scripts/scan-public-export.mjs",
     "license:check": "node scripts/check-licenses.mjs",
     "db:migrate:local": "wrangler d1 migrations apply morrowlilt-local --local",

@@ -215,15 +215,11 @@ export async function runScheduledDailyJob(
   env: Env,
 ): Promise<void> {
   const platform = getResendConfig(env)
-  const targets = await listVerifiedEmailTargets(env.DB)
-  if (
-    platform &&
-    !targets.some(
-      (target) =>
-        target.email.trim().toLowerCase() ===
-        platform.recipientEmail.trim().toLowerCase(),
-    )
-  ) {
+  const storedTargets = await listVerifiedEmailTargets(env.DB)
+  const targets = platform
+    ? storedTargets.filter((target) => target.profileId !== 'default')
+    : storedTargets
+  if (platform) {
     targets.push({
       profileId: 'default',
       email: platform.recipientEmail,
@@ -237,9 +233,7 @@ export async function runScheduledDailyJob(
 
   for (const target of targets) {
     const isPlatformRecipient =
-      platform !== undefined &&
-      target.email.trim().toLowerCase() ===
-        platform.recipientEmail.trim().toLowerCase()
+      platform !== undefined && target.profileId === 'default'
     const sendHourLocal = isPlatformRecipient
       ? platform.sendHourLocal
       : target.sendHourLocal
