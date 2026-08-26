@@ -438,6 +438,84 @@ describe('quiz sessions, reports, and mistake mastery', () => {
     ).toBe(session.id)
   })
 
+  it('returns one session when identical creation requests race', async () => {
+    const profileId = await profile('create-concurrent')
+    const idempotencyKey = `create-concurrent-${crypto.randomUUID()}`
+    const input = {
+      db: env.DB,
+      profileId,
+      idempotencyKey,
+      count: 6,
+      types,
+      mode: 'mixed' as const,
+    }
+    const sessions = await Promise.all([
+      createQuizSession({ ...input, seedHex: seed(221) }),
+      createQuizSession({ ...input, seedHex: seed(222) }),
+    ])
+    expect(sessions[1]).toEqual(sessions[0])
+    const count = await env.DB.prepare(
+      `SELECT count(*) AS count FROM quiz_sessions
+       WHERE profile_id = ? AND idempotency_key = ?`,
+    )
+      .bind(profileId, idempotencyKey)
+      .first<{ count: number }>()
+    expect(count?.count).toBe(1)
+  })
+
+  it('applies mistake updates once when completion requests race', async () => {
+    const profileId = await profile('complete-concurrent')
+    const session = await createQuizSession({
+      db: env.DB,
+      profileId,
+      idempotencyKey: `complete-concurrent-${crypto.randomUUID()}`,
+      count: 6,
+      types,
+      mode: 'mixed',
+      seedHex: seed(450),
+    })
+    for (const question of session.questions) {
+      await submitQuizAnswer({
+        db: env.DB,
+        profileId,
+        sessionId: session.id,
+        questionId: question.id,
+        response: 'definitely-wrong',
+        durationMs: 1_000,
+        idempotencyKey: `concurrent-answer-${question.id}`,
+      })
+    }
+
+    const reports = await Promise.all([
+      completeQuizSession({
+        db: env.DB,
+        profileId,
+        sessionId: session.id,
+        businessDate: '2026-08-20',
+      }),
+      completeQuizSession({
+        db: env.DB,
+        profileId,
+        sessionId: session.id,
+        businessDate: '2026-08-20',
+      }),
+    ])
+    expect(reports[1]).toEqual(reports[0])
+    const eventCount = await env.DB.prepare(
+      'SELECT count(*) AS count FROM mistake_book_events WHERE session_id = ?',
+    )
+      .bind(session.id)
+      .first<{ count: number }>()
+    expect(eventCount?.count).toBe(session.questions.length)
+    const mistakes = await env.DB.prepare(
+      `SELECT count(*) AS count FROM mistake_book
+       WHERE profile_id = ? AND error_count = 1`,
+    )
+      .bind(profileId)
+      .first<{ count: number }>()
+    expect(mistakes?.count).toBe(session.questions.length)
+  })
+
   it('soft-deletes a report while retaining learning history and owner isolation', async () => {
     const profileId = await profile('delete-report-owner')
     const session = await createQuizSession({

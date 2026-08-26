@@ -56,8 +56,24 @@ describe('email subscription lifecycle', () => {
       'email_verify',
     )
     expect(token).toBeTruthy()
+    const otherProfile = await ensureAppProfile({
+      db: env.DB,
+      profileId: `email-other-${crypto.randomUUID()}`,
+      timeZone: 'Asia/Shanghai',
+      now: new Date('2026-08-21T12:00:00Z'),
+    })
+    await expect(
+      confirmEmailBinding({
+        db: env.DB,
+        profileId: otherProfile.id,
+        token: token as string,
+        idempotencyKey: 'email-verify-wrong-owner-0001',
+        timeZone: otherProfile.timeZone,
+      }),
+    ).rejects.toMatchObject({ code: 'EMAIL_VERIFICATION_INVALID' })
     const verified = await confirmEmailBinding({
       db: env.DB,
+      profileId: profile.id,
       token: token as string,
       idempotencyKey: 'email-verify-test-0001',
       timeZone: profile.timeZone,

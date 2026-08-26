@@ -259,6 +259,15 @@ export function DictionaryExperience() {
     setMessage('正在通过本站服务查询并检查 D1 缓存…')
     let preview: DictionaryResult | undefined
     const encodedTerm = encodeURIComponent(term)
+    const completeLookup = apiGet(
+      `/api/dictionary?term=${encodedTerm}`,
+      dictionaryResultSchema,
+      controller.signal,
+      25_000,
+    ).then(
+      (data: DictionaryResult) => ({ data }) as const,
+      (error: unknown) => ({ error }) as const,
+    )
     try {
       preview = await apiGet(
         `/api/dictionary?term=${encodedTerm}&mode=quick`,
@@ -276,12 +285,9 @@ export function DictionaryExperience() {
       // A local preview is optional; the complete Provider lookup continues.
     }
     try {
-      const data: DictionaryResult = await apiGet(
-        `/api/dictionary?term=${encodedTerm}`,
-        dictionaryResultSchema,
-        controller.signal,
-        25_000,
-      )
+      const completed = await completeLookup
+      if ('error' in completed) throw completed.error
+      const data = completed.data
       setResult(data)
       setQuery(data.normalizedTerm)
       setSuggestionsOpen(false)

@@ -142,18 +142,20 @@ export async function savePendingEmailSubscription(input: {
 
 export async function verifyPendingEmailSubscription(
   db: D1Database,
+  profileId: string,
   verificationTokenHash: string,
   idempotencyKey: string,
 ): Promise<EmailSubscription | undefined> {
   const row = await db
     .prepare(
       `SELECT ${columns} FROM users
-       WHERE verification_token_hash = ?
+       WHERE profile_id = ?
+         AND verification_token_hash = ?
          AND email_status = 'pending'
          AND verification_expires_at > ?
        LIMIT 1`,
     )
-    .bind(verificationTokenHash, new Date().toISOString())
+    .bind(profileId, verificationTokenHash, new Date().toISOString())
     .first<UserRow>()
   if (!row) return undefined
   const now = new Date().toISOString()
@@ -163,9 +165,9 @@ export async function verifyPendingEmailSubscription(
         `UPDATE users SET email_status = 'verified',
            verification_token_hash = NULL, verification_expires_at = NULL,
            verified_at = ?, unsubscribed_at = NULL, updated_at = ?
-         WHERE id = ? AND email_status = 'pending'`,
+         WHERE id = ? AND profile_id = ? AND email_status = 'pending'`,
       )
-      .bind(now, now, row.id),
+      .bind(now, now, row.id, profileId),
     db
       .prepare(
         `INSERT INTO email_subscription_events (

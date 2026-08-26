@@ -70,6 +70,18 @@ function mergeParts(rows: SenseRow[]): DictionaryPartOfSpeech[] {
   }))
 }
 
+function groupByLemma<T extends { normalized_lemma: string }>(
+  rows: T[],
+): Map<string, T[]> {
+  const groups = new Map<string, T[]>()
+  for (const row of rows) {
+    const group = groups.get(row.normalized_lemma) ?? []
+    group.push(row)
+    groups.set(row.normalized_lemma, group)
+  }
+  return groups
+}
+
 export async function lookupLocalLexicon(
   db: D1Database,
   normalizedTerm: string,
@@ -87,28 +99,41 @@ export async function lookupLocalLexicon(
     .all<{ normalized_lemma: string; lemma: string }>()
   if (lemmaResult.results.length === 0) return undefined
 
-  const entries: DictionaryEntry[] = []
-  for (const lemmaRow of lemmaResult.results) {
-    const senses = await db
+  const normalizedLemmas = lemmaResult.results.map(
+    (row) => row.normalized_lemma,
+  )
+  const placeholders = normalizedLemmas.map(() => '?').join(', ')
+  const [senseResult, formResult] = await Promise.all([
+    db
       .prepare(
         `SELECT normalized_lemma, lemma, part_of_speech, definition,
                 examples_json, synonyms_json
          FROM dictionary_lexicon_senses
-         WHERE normalized_lemma = ?
-         ORDER BY part_of_speech, id`,
+         WHERE normalized_lemma IN (${placeholders})
+         ORDER BY normalized_lemma, part_of_speech, id`,
       )
-      .bind(lemmaRow.normalized_lemma)
-      .all<SenseRow>()
-    const forms = await db
+      .bind(...normalizedLemmas)
+      .all<SenseRow>(),
+    db
       .prepare(
         `SELECT normalized_lemma, lemma, part_of_speech, form, form_label
          FROM dictionary_lexicon_forms
-         WHERE normalized_lemma = ? ORDER BY part_of_speech, form`,
+         WHERE normalized_lemma IN (${placeholders})
+         ORDER BY normalized_lemma, part_of_speech, form`,
       )
-      .bind(lemmaRow.normalized_lemma)
-      .all<FormRow>()
-    const partsOfSpeech = mergeParts(senses.results)
-    const suppliedForms = forms.results.map((row) => row.form)
+      .bind(...normalizedLemmas)
+      .all<FormRow>(),
+  ])
+  const sensesByLemma = groupByLemma(senseResult.results)
+  const formsByLemma = groupByLemma(formResult.results)
+  const entries: DictionaryEntry[] = []
+  for (const lemmaRow of lemmaResult.results) {
+    const partsOfSpeech = mergeParts(
+      sensesByLemma.get(lemmaRow.normalized_lemma) ?? [],
+    )
+    const suppliedForms = (
+      formsByLemma.get(lemmaRow.normalized_lemma) ?? []
+    ).map((row) => row.form)
     entries.push({
       headword: lemmaRow.lemma,
       pronunciations: [],

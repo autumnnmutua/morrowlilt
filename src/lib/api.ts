@@ -48,7 +48,15 @@ export async function apiRequest<T>(
   input: string,
   options: ApiRequestOptions<T>,
 ): Promise<T> {
-  if (isMutation(options.method) && navigator.onLine === false) {
+  const {
+    envelope: usesEnvelope = true,
+    schema,
+    signal,
+    timeoutMs = 15_000,
+    ...requestInit
+  } = options
+  if (signal?.aborted) throw abortError(signal)
+  if (isMutation(requestInit.method) && navigator.onLine === false) {
     throw new OfflineMutationError()
   }
 
@@ -56,17 +64,17 @@ export async function apiRequest<T>(
   const timeout = window.setTimeout(
     () =>
       controller.abort(new DOMException('Request timed out', 'TimeoutError')),
-    options.timeoutMs ?? 15_000,
+    timeoutMs,
   )
-  const onExternalAbort = () => controller.abort(abortError(options.signal))
-  options.signal?.addEventListener('abort', onExternalAbort, { once: true })
+  const onExternalAbort = () => controller.abort(abortError(signal))
+  signal?.addEventListener('abort', onExternalAbort, { once: true })
 
   try {
-    const headers = new Headers(options.headers)
+    const headers = new Headers(requestInit.headers)
     headers.set('accept', 'application/json')
     headers.set('x-requested-with', 'morrowlilt-web')
     const response = await fetch(input, {
-      ...options,
+      ...requestInit,
       credentials: 'same-origin',
       headers,
       signal: controller.signal,
@@ -96,9 +104,7 @@ export async function apiRequest<T>(
     }
 
     const envelope = body as { data?: unknown }
-    const parsed = options.schema.safeParse(
-      options.envelope === false ? body : envelope.data,
-    )
+    const parsed = schema.safeParse(usesEnvelope ? envelope.data : body)
     if (!parsed.success) {
       throw new ApiError(
         '服务返回的数据结构不符合预期',
@@ -109,7 +115,7 @@ export async function apiRequest<T>(
     return parsed.data
   } finally {
     window.clearTimeout(timeout)
-    options.signal?.removeEventListener('abort', onExternalAbort)
+    signal?.removeEventListener('abort', onExternalAbort)
   }
 }
 
