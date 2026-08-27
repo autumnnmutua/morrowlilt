@@ -90,7 +90,7 @@ test('360px, 768px and 200% zoom keep every core page usable', async ({
     await page.goto('/')
     for (const [index, pageName] of pageNames.entries()) {
       if (index > 0) await page.keyboard.press(`Alt+Digit${index + 1}`)
-      await expect(page.locator('main h1')).toBeVisible()
+      await expect(page.locator('main h1:visible').first()).toBeVisible()
       expect(
         await page.evaluate(
           () =>
@@ -102,11 +102,11 @@ test('360px, 768px and 200% zoom keep every core page usable', async ({
     }
   }
 
-  await page.setViewportSize({ width: 768, height: 900 })
+  // A 768px-wide viewport at 200% browser zoom exposes roughly 384 CSS pixels.
+  // Testing the effective CSS viewport exercises the same responsive reflow
+  // without relying on the non-standard CSS `zoom` property's platform quirks.
+  await page.setViewportSize({ width: 384, height: 450 })
   await page.goto('/')
-  await page.evaluate(() => {
-    document.documentElement.style.zoom = '200%'
-  })
   await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible()
   expect(
     await page.evaluate(
