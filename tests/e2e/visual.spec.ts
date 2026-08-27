@@ -102,27 +102,19 @@ test('360px, 768px and 200% zoom keep every core page usable', async ({
     }
   }
 
-  await page.setViewportSize({ width: 768, height: 900 })
+  // A 768px-wide viewport at 200% browser zoom exposes roughly 384 CSS pixels.
+  // Testing the effective CSS viewport exercises the same responsive reflow
+  // without relying on the non-standard CSS `zoom` property's platform quirks.
+  await page.setViewportSize({ width: 384, height: 450 })
   await page.goto('/')
-  await page.evaluate(async () => {
-    document.documentElement.style.zoom = '200%'
-    await document.fonts.ready
-    await new Promise<void>((resolve) => {
-      requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
-    })
-  })
   await expect(page.getByRole('heading', { level: 1 }).first()).toBeVisible()
-  await expect
-    .poll(
+  expect(
+    await page.evaluate(
       () =>
-        page.evaluate(
-          () =>
-            document.documentElement.scrollWidth <=
-            document.documentElement.clientWidth + 1,
-        ),
-      { timeout: 5_000 },
-    )
-    .toBe(true)
+        document.documentElement.scrollWidth <=
+        document.documentElement.clientWidth + 1,
+    ),
+  ).toBe(true)
   await page.screenshot({
     fullPage: false,
     path: 'test-results/visual/morrowlilt-200-percent-zoom.png',
