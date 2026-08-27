@@ -136,6 +136,42 @@ describe('learning progress invariants', () => {
     expect(nextDay.days.map((day) => day.contentDate)).toEqual(['2026-08-21'])
   })
 
+  it('settles a multi-day backlog without deleting its learning history', async () => {
+    const id = await createProfile('multi-day-settlement', '2026-08-20')
+    const backlog = await getPendingBundle({
+      db: env.DB,
+      profileId: id,
+      today: '2026-08-22',
+    })
+    expect(backlog.days.map((day) => day.contentDate)).toEqual([
+      '2026-08-20',
+      '2026-08-21',
+      '2026-08-22',
+    ])
+
+    await markLearned({
+      db: env.DB,
+      profileId: id,
+      today: '2026-08-22',
+      idempotencyKey: 'learned-multi-day-20260822',
+    })
+    const nextDay = await getPendingBundle({
+      db: env.DB,
+      profileId: id,
+      today: '2026-08-23',
+    })
+
+    expect(nextDay.progress.settledThroughDate).toBe('2026-08-22')
+    expect(nextDay.days.map((day) => day.contentDate)).toEqual(['2026-08-23'])
+    const historicalContent = await env.DB.prepare(
+      `SELECT count(*) AS count FROM profile_daily_content
+       WHERE profile_id = ? AND content_date <= '2026-08-22'`,
+    )
+      .bind(id)
+      .first<{ count: number }>()
+    expect(historicalContent?.count).toBe(3)
+  })
+
   it('restores previous_settled on a same-business-day undo', async () => {
     const id = await createProfile('undo', '2026-08-20')
     const learned = await markLearned({

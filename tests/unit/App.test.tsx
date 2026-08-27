@@ -9,13 +9,36 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import App from '../../src/App'
 import type { TodayData } from '../../src/types'
 
-function createTodayData(): TodayData {
+function getShanghaiDate(now = new Date()): string {
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    day: '2-digit',
+    month: '2-digit',
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
+  }).formatToParts(now)
+  const values = new Map(parts.map((part) => [part.type, part.value]))
+  return `${values.get('year')}-${values.get('month')}-${values.get('day')}`
+}
+
+function addUtcDays(date: string, amount: number): string {
+  const value = new Date(`${date}T00:00:00.000Z`)
+  value.setUTCDate(value.getUTCDate() + amount)
+  return value.toISOString().slice(0, 10)
+}
+
+const fixtureToday = getShanghaiDate()
+const fixturePreviousDate = addUtcDays(fixtureToday, -1)
+
+function createTodayData(
+  today = fixtureToday,
+  settledThroughDate = fixturePreviousDate,
+): TodayData {
   const content = {
-    id: 'today-content',
-    contentDate: '2026-08-20',
+    id: `today-content-${today}`,
+    contentDate: today,
     payload: {
       schemaVersion: 2 as const,
-      contentDate: '2026-08-20',
+      contentDate: today,
       difficulty: 'C1' as const,
       theme: 'learning' as const,
       originType: 'original' as const,
@@ -96,21 +119,21 @@ function createTodayData(): TodayData {
     provider: 'test-provider',
     fingerprint: 'fixture-fingerprint',
     generatorVersion: 'test-v2',
-    createdAt: '2026-08-20T00:00:00.000Z',
+    createdAt: `${today}T00:00:00.000Z`,
   }
   return {
     profile: {
       id: 'default',
       timeZone: 'Asia/Shanghai',
       learningTrack: 'academic',
-      createdDate: '2026-08-20',
+      createdDate: today,
     },
     progress: {
       profileId: 'default',
-      settledThroughDate: '2026-08-19',
+      settledThroughDate,
       version: 0,
     },
-    today: '2026-08-20',
+    today,
     learningState: 'unsettled',
     pendingDayCount: 1,
     totalItemCount: 3,
@@ -119,8 +142,10 @@ function createTodayData(): TodayData {
   }
 }
 
+let today: TodayData
+
 beforeEach(() => {
-  let today = createTodayData()
+  today = createTodayData()
   vi.stubGlobal(
     'fetch',
     vi.fn().mockImplementation((input: RequestInfo | URL) => {
@@ -240,6 +265,35 @@ describe('MorrowLilt application skeleton', () => {
         '当前为未学习状态。今天不完成时，全部内容明天仍会保留。',
       ),
     ).toBeInTheDocument()
+  })
+
+  it('refreshes a settled page when the profile business date changes', async () => {
+    const currentBusinessDate = fixtureToday
+    const staleDate = fixturePreviousDate
+    today = createTodayData(staleDate, staleDate)
+    today = {
+      ...today,
+      days: [],
+      learningState: 'settled',
+      pendingDayCount: 0,
+      totalItemCount: 0,
+    }
+    render(<App />)
+    await screen.findByText(
+      '已结清截至今天的整个待学包；同一业务日内可以撤销。',
+    )
+
+    today = createTodayData(currentBusinessDate, staleDate)
+    window.dispatchEvent(new Event('focus'))
+
+    expect(
+      await screen.findByText(
+        '当前为未学习状态。今天不完成时，全部内容明天仍会保留。',
+      ),
+    ).toBeInTheDocument()
+    expect(
+      vi.mocked(fetch).mock.calls.filter(([input]) => input === '/api/today'),
+    ).toHaveLength(2)
   })
 
   it.each([

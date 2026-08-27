@@ -563,12 +563,6 @@ async function handleCheckin(request: Request, env: Env): Promise<Response> {
 
   const profile = await ensureRequestProfile(env, getRequestProfileId(request))
   const today = getLocalDate(profile.timeZone)
-  await getPendingBundle({
-    db: env.DB,
-    profileId: profile.id,
-    today,
-    onlineProvider: getOnlineContentProvider(env),
-  })
   const mutation = await (body.action === 'learned'
     ? markLearned({
         db: env.DB,
