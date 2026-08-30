@@ -28,7 +28,7 @@
     "cf-typegen:check": "wrangler types --check"
   },
   "dependencies": {
-    "jose": "^6.2.9",
+    "jose": "^6.2.10",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "zod": "^4.4.3"
