@@ -5,10 +5,13 @@ import { defineConfig } from 'vite'
 export default defineConfig({
   plugins: [
     react(),
-    cloudflare(
-      process.env.CLOUDFLARE_DEPLOY_CONFIG
+    cloudflare({
+      ...(process.env.CLOUDFLARE_DEPLOY_CONFIG
         ? { configPath: process.env.CLOUDFLARE_DEPLOY_CONFIG }
-        : undefined,
-    ),
+        : {}),
+      ...(process.env.MORROWLILT_PERSIST_PATH
+        ? { persistState: { path: process.env.MORROWLILT_PERSIST_PATH } }
+        : {}),
+    }),
   ],
 })

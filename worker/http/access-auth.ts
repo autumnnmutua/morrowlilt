@@ -20,6 +20,25 @@ export class AccessAuthError extends Error {
 }
 
 type LocalJwks = Parameters<typeof createLocalJWKSet>[0]
+type RemoteJwkSet = ReturnType<typeof createRemoteJWKSet>
+
+// The Access issuer is deployment configuration, not request state. Keeping a
+// single bounded JWKS resolver lets jose reuse its validated key cache across
+// requests in the same isolate without retaining user data.
+let cachedRemoteJwks: { jwksUrl: string; resolver: RemoteJwkSet } | undefined
+
+function getRemoteJwkSet(jwksUrl: string): RemoteJwkSet {
+  if (cachedRemoteJwks?.jwksUrl === jwksUrl) {
+    return cachedRemoteJwks.resolver
+  }
+  const resolver = createRemoteJWKSet(new URL(jwksUrl), {
+    cacheMaxAge: 10 * 60 * 1000,
+    cooldownDuration: 60 * 1000,
+    timeoutDuration: 5_000,
+  })
+  cachedRemoteJwks = { jwksUrl, resolver }
+  return resolver
+}
 
 function isLocalOrTestHost(hostname: string): boolean {
   return (
@@ -37,11 +56,7 @@ export async function verifyAccessJwt(
 ): Promise<JWTPayload> {
   const keySet = localJwks
     ? createLocalJWKSet(localJwks)
-    : createRemoteJWKSet(new URL(config.jwksUrl), {
-        cacheMaxAge: 10 * 60 * 1000,
-        cooldownDuration: 60 * 1000,
-        timeoutDuration: 5_000,
-      })
+    : getRemoteJwkSet(config.jwksUrl)
   const result = await jwtVerify(token, keySet, {
     algorithms: ['RS256'],
     audience: config.audience,

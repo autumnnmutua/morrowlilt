@@ -24,9 +24,8 @@ import {
   isWorkersAiContentEnabled,
 } from '../runtime-config'
 import { getBusinessDate, getBusinessHour } from '../time/business-date'
-import { ensureDailyContent } from './daily-content'
+import { ContentPipelineError, ensureDailyContent } from './daily-content'
 import { ensureDailyLearningPackage } from './daily-package'
-import { ensureProfileDailyLearningPackage } from './daily-package'
 import { ensureAppProfile } from './learning'
 import { WorkersAiContentProvider } from '../providers/workers-ai'
 import { decryptSecret } from '../security/secret-envelope'
@@ -43,6 +42,25 @@ export class EmailDeliveryError extends Error {
     this.code = code
     this.retryable = retryable
     this.status = status
+  }
+}
+
+const scheduledCatchUpHours = 12
+const hourMilliseconds = 60 * 60 * 1000
+
+function getDueDeliveryWindow(input: {
+  scheduledTime: number
+  timeZone: string
+  sendHourLocal: number
+}): { contentDate: string; scheduledHourTime: number } | undefined {
+  const businessHour = getBusinessHour(input.scheduledTime, input.timeZone)
+  const hoursAfterSend = (businessHour - input.sendHourLocal + 24) % 24
+  if (hoursAfterSend > scheduledCatchUpHours) return undefined
+  const scheduledHourTime =
+    input.scheduledTime - hoursAfterSend * hourMilliseconds
+  return {
+    contentDate: getBusinessDate(scheduledHourTime, input.timeZone),
+    scheduledHourTime,
   }
 }
 
@@ -190,24 +208,13 @@ async function ensureProfileEmailPackage(input: {
   contentDate: string
   timeZone: string
 }): Promise<PersistedDailyContent> {
-  await ensureAppProfile({
-    db: input.env.DB,
-    profileId: input.profileId,
-    timeZone: input.timeZone,
-  })
-  const content = await ensureProfileDailyContent({
+  return ensureProfileDailyContent({
     db: input.env.DB,
     profileId: input.profileId,
     contentDate: input.contentDate,
     timeZone: input.timeZone,
     onlineProvider: getOnlineProvider(input.env),
   })
-  await ensureProfileDailyLearningPackage({
-    db: input.env.DB,
-    profileId: input.profileId,
-    content,
-  })
-  return content
 }
 
 export async function runScheduledDailyJob(
@@ -228,6 +235,7 @@ export async function runScheduledDailyJob(
   }
   const encryptionSecret = getUserSecretEncryptionKey(env)
   let sent = 0
+  let alreadySent = 0
   let skipped = 0
   let failed = 0
 
@@ -237,13 +245,35 @@ export async function runScheduledDailyJob(
     const sendHourLocal = isPlatformRecipient
       ? platform.sendHourLocal
       : target.sendHourLocal
-    const businessHour = getBusinessHour(scheduledTime, target.timeZone)
-    if (sendHourLocal === undefined || businessHour !== sendHourLocal) {
+    if (sendHourLocal === undefined) {
       skipped += 1
       continue
     }
-    const contentDate = getBusinessDate(scheduledTime, target.timeZone)
+    const due = getDueDeliveryWindow({
+      scheduledTime,
+      timeZone: target.timeZone,
+      sendHourLocal,
+    })
+    if (!due) {
+      skipped += 1
+      continue
+    }
+    const { contentDate } = due
+    if (
+      !isPlatformRecipient &&
+      target.deliveryReadyAt &&
+      Date.parse(target.deliveryReadyAt) > due.scheduledHourTime
+    ) {
+      skipped += 1
+      continue
+    }
     try {
+      const content = await ensureProfileEmailPackage({
+        env,
+        profileId: target.profileId,
+        contentDate,
+        timeZone: target.timeZone,
+      })
       let apiKey: string
       let mailFrom: string
       let publicSiteUrl: string
@@ -274,12 +304,6 @@ export async function runScheduledDailyJob(
           continue
         }
       }
-      const content = await ensureProfileEmailPackage({
-        env,
-        profileId: target.profileId,
-        contentDate,
-        timeZone: target.timeZone,
-      })
       const result = await deliverDailyEmail({
         db: env.DB,
         profileId: target.profileId,
@@ -290,8 +314,10 @@ export async function runScheduledDailyJob(
         publicSiteUrl,
         deliveryType: 'scheduled',
       })
-      if (result.outcome === 'sent' || result.outcome === 'already_sent') {
+      if (result.outcome === 'sent') {
         sent += 1
+      } else if (result.outcome === 'already_sent') {
+        alreadySent += 1
       } else {
         skipped += 1
       }
@@ -303,7 +329,52 @@ export async function runScheduledDailyJob(
           code:
             error instanceof EmailDeliveryError
               ? error.code
-              : 'EMAIL_TARGET_FAILED',
+              : error instanceof ContentPipelineError
+                ? error.code
+                : 'EMAIL_TARGET_FAILED',
+          contentDate,
+        }),
+      )
+    }
+  }
+
+  // Prepare content at the beginning of each learner's business day and once
+  // more during the hour before delivery. This keeps website reads fast and
+  // gives transient AI failures several independent Cron opportunities without
+  // delaying or replacing the previous day's catch-up email.
+  for (const target of targets) {
+    const isPlatformRecipient =
+      platform !== undefined && target.profileId === 'default'
+    const sendHourLocal = isPlatformRecipient
+      ? platform.sendHourLocal
+      : target.sendHourLocal
+    if (sendHourLocal === undefined) continue
+    const businessHour = getBusinessHour(scheduledTime, target.timeZone)
+    const warmupHour = (sendHourLocal + 23) % 24
+    if (businessHour !== 0 && businessHour !== warmupHour) continue
+    const contentDate = getBusinessDate(scheduledTime, target.timeZone)
+    try {
+      await ensureProfileEmailPackage({
+        env,
+        profileId: target.profileId,
+        contentDate,
+        timeZone: target.timeZone,
+      })
+      console.log(
+        JSON.stringify({
+          event: 'daily_email_content_ready',
+          contentDate,
+        }),
+      )
+    } catch (error) {
+      failed += 1
+      console.error(
+        JSON.stringify({
+          event: 'daily_email_content_warmup_failed',
+          code:
+            error instanceof ContentPipelineError
+              ? error.code
+              : 'EMAIL_CONTENT_WARMUP_FAILED',
           contentDate,
         }),
       )
@@ -313,6 +384,7 @@ export async function runScheduledDailyJob(
     JSON.stringify({
       event: 'daily_email_completed',
       sent,
+      alreadySent,
       skipped,
       failed,
     }),

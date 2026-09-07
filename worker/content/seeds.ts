@@ -730,11 +730,20 @@ function partOfSpeechFor(
 
 export const seedThemeCoverage = seedLibrary.map((seed) => seed.theme)
 
-export function createSeedCandidates(
+export const seedCandidateCount = seedLibrary.length
+
+export function createSeedCandidate(
   contentDate: string,
-  expressionOffset = 0,
-): DailyContentCandidate[] {
-  return seedLibrary.map((seed, seedIndex) => ({
+  seedIndex: number,
+  expressionGroupIndex = seedIndex,
+): DailyContentCandidate {
+  if (!Number.isInteger(seedIndex) || seedLibrary.length === 0) {
+    throw new Error('A valid built-in content seed index is required')
+  }
+  const normalizedSeedIndex =
+    ((seedIndex % seedLibrary.length) + seedLibrary.length) % seedLibrary.length
+  const seed = seedLibrary[normalizedSeedIndex]
+  return {
     payload: {
       schemaVersion: 2,
       contentDate,
@@ -770,9 +779,7 @@ export function createSeedCandidates(
             ? '结合搭配和例句记忆，不要只背单一中文对译。'
             : '把整个词块作为一个单位记忆，并注意适用语域。',
       })),
-      practicalExpressions: practicalExpressionGroup(
-        seedIndex + expressionOffset,
-      ),
+      practicalExpressions: practicalExpressionGroup(expressionGroupIndex),
       topic: {
         kind: 'writing',
         prompt: seed.topicPrompt,
@@ -781,5 +788,14 @@ export function createSeedCandidates(
     },
     provider: 'morrowlilt-built-in',
     attribution: 'MorrowLilt 高阶学习材料',
-  }))
+  }
+}
+
+export function createSeedCandidates(
+  contentDate: string,
+  expressionOffset = 0,
+): DailyContentCandidate[] {
+  return seedLibrary.map((_seed, seedIndex) =>
+    createSeedCandidate(contentDate, seedIndex, seedIndex + expressionOffset),
+  )
 }

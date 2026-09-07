@@ -80,6 +80,7 @@ export type VerifiedEmailTarget = {
   profileId: string
   email: string
   timeZone: string
+  deliveryReadyAt?: string
   encryptedApiKey?: string
   encryptionIv?: string
   mailFrom?: string
@@ -92,6 +93,11 @@ export async function listVerifiedEmailTargets(
   const result = await db
     .prepare(
       `SELECT user.profile_id, user.email, user.timezone,
+              CASE
+                WHEN credential.created_at IS NULL THEN user.verified_at
+                WHEN user.verified_at >= credential.created_at THEN user.verified_at
+                ELSE credential.created_at
+              END AS delivery_ready_at,
               credential.encrypted_api_key, credential.encryption_iv,
               credential.mail_from, credential.send_hour_local
        FROM users AS user
@@ -105,6 +111,7 @@ export async function listVerifiedEmailTargets(
       profile_id: string
       email: string
       timezone: string
+      delivery_ready_at: string | null
       encrypted_api_key: string | null
       encryption_iv: string | null
       mail_from: string | null
@@ -114,6 +121,7 @@ export async function listVerifiedEmailTargets(
     profileId: row.profile_id,
     email: row.email,
     timeZone: row.timezone,
+    deliveryReadyAt: row.delivery_ready_at ?? undefined,
     encryptedApiKey: row.encrypted_api_key ?? undefined,
     encryptionIv: row.encryption_iv ?? undefined,
     mailFrom: row.mail_from ?? undefined,

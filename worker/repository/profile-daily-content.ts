@@ -143,6 +143,20 @@ export async function listFingerprintsForDate(
   return new Set(result.results.map((row) => row.fingerprint))
 }
 
+export async function listUsedProfileComponentValues(
+  db: D1Database,
+  profileId: string,
+): Promise<Set<string>> {
+  const result = await db
+    .prepare(
+      `SELECT normalized_value FROM profile_daily_content_components
+       WHERE profile_id = ?`,
+    )
+    .bind(profileId)
+    .all<{ normalized_value: string }>()
+  return new Set(result.results.map((row) => row.normalized_value))
+}
+
 export async function tryInsertProfileDailyContent(input: {
   db: D1Database
   profileId: string
@@ -212,8 +226,14 @@ export async function tryInsertProfileDailyContent(input: {
           ),
       ),
     ])
-  } catch {
-    return getProfileDailyContent(input.db, input.profileId, input.contentDate)
+  } catch (error) {
+    const concurrent = await getProfileDailyContent(
+      input.db,
+      input.profileId,
+      input.contentDate,
+    )
+    if (concurrent) return concurrent
+    throw error
   }
   return getProfileDailyContent(input.db, input.profileId, input.contentDate)
 }

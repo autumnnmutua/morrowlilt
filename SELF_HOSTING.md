@@ -93,7 +93,7 @@ pnpm exec wrangler secret put MAIL_FROM --config wrangler.production.private.jso
 
 ## 6. Cron 与时区
 
-Cloudflare Cron 使用 UTC，公共配置使用 `0 * * * *` 每个 UTC 整点唤醒 Worker。每次执行会逐个读取已确认用户的 IANA 时区和本地发送小时，只处理当前到点用户，因此能支持不同时区以及夏令时变化。
+Cloudflare Cron 使用 UTC，公共配置使用 `*/5 * * * *` 每 5 分钟唤醒 Worker。每次执行会逐个读取已确认用户的 IANA 时区和本地发送小时，只处理当前到点用户，因此能支持不同时区以及夏令时变化；同一发送小时内的重复触发用于恢复瞬时故障，并由投递幂等状态防止重复邮件。
 
 每个目标用户依次执行：
 

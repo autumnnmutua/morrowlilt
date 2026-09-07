@@ -1,7 +1,7 @@
 {
   "name": "morrowlilt-self-hosted",
   "private": true,
-  "version": "1.6.0",
+  "version": "1.7.0",
   "type": "module",
   "packageManager": "pnpm@11.19.0",
   "scripts": {
@@ -15,7 +15,7 @@
     "test": "pnpm run test:unit && pnpm run test:worker",
     "test:unit": "vitest run --config vitest.config.ts",
     "test:worker": "vitest run --config vitest.worker.config.ts",
-    "test:e2e": "pnpm run db:migrate:local && playwright test",
+    "test:e2e": "node scripts/run-e2e.mjs",
     "scan:public": "node scripts/scan-public-export.mjs",
     "license:check": "node scripts/check-licenses.mjs",
     "db:migrate:local": "wrangler d1 migrations apply morrowlilt-local --local",
