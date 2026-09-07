@@ -10,8 +10,7 @@ import {
   readBoundedRequestJson,
   RequestValidationError,
 } from './http/request-json'
-import { HttpContentProvider } from './providers/http-content'
-import type { ContentProvider } from './providers/contracts'
+import { getOnlineContentProvider } from './providers/content-provider'
 import { FreeDictionaryProvider } from './providers/free-dictionary'
 import { DatamuseSuggestionProvider } from './providers/datamuse'
 import { checkDatabase } from './repository/daily-content'
@@ -23,7 +22,6 @@ import {
   updateProfileTimeZone,
 } from './repository/learning'
 import {
-  getContentProviderConfig,
   getPublicSiteUrl,
   getResendConfig,
   getResendSenderConfig,
@@ -55,10 +53,7 @@ import {
   ResendEmailProvider,
   verifyResendSendingDomain,
 } from './providers/resend'
-import {
-  WorkersAiContentProvider,
-  WorkersAiDictionaryTranslationProvider,
-} from './providers/workers-ai'
+import { WorkersAiDictionaryTranslationProvider } from './providers/workers-ai'
 import {
   confirmEmailBinding,
   configureUserEmailProvider,
@@ -122,15 +117,6 @@ function methodNotAllowed(allowed: string): Response {
     { error: { code: 'METHOD_NOT_ALLOWED', message: 'Method not allowed' } },
     { status: 405, headers: { allow: allowed } },
   )
-}
-
-function getOnlineContentProvider(env: Env): ContentProvider | undefined {
-  const config = getContentProviderConfig(env)
-  if (config) return new HttpContentProvider(config.endpoint, config.apiKey)
-  const ai = getWorkersAiBinding(env)
-  return isWorkersAiContentEnabled(env) && ai
-    ? new WorkersAiContentProvider(ai)
-    : undefined
 }
 
 async function getEmailSenderForProfile(
@@ -287,6 +273,7 @@ async function handleDailyContent(
   const profileId = getRequestProfileId(request)
   const profile = await ensureRequestProfile(env, profileId)
   const existing = await getProfileDailyContent(env.DB, profileId, contentDate)
+  if (!existing) requireProfileContentDate(contentDate, profile)
   const data =
     existing ??
     (await ensureProfileDailyContent({
@@ -320,6 +307,7 @@ async function handleDailyPackage(
     contentDate,
   )
   if (existing) return json({ data: existing })
+  requireProfileContentDate(contentDate, profile)
   const content = await ensureProfileDailyContent({
     db: env.DB,
     profileId: profile.id,
@@ -605,6 +593,21 @@ async function handleUndo(request: Request, env: Env): Promise<Response> {
     data: await getTodayPayload(env, getRequestProfileId(request)),
     mutation,
   })
+}
+
+function requireProfileContentDate(
+  contentDate: string,
+  profile: { createdDate: string; timeZone: string },
+): void {
+  if (
+    contentDate < profile.createdDate ||
+    contentDate > getLocalDate(profile.timeZone)
+  ) {
+    throw new RequestValidationError(
+      'CONTENT_DATE_OUT_OF_RANGE',
+      'Content date must be between profile creation and today',
+    )
+  }
 }
 
 function requireContentDate(value: unknown): string {
@@ -1224,7 +1227,10 @@ export default {
             identity,
             defaultTimeZone: env.APP_TIME_ZONE,
             ownerEmail: getResendConfig(env)?.recipientEmail,
-            allowReauthorize: pathname === '/api/account/reauthorize',
+            allowReauthorize:
+              pathname === '/api/account/reauthorize' &&
+              request.method === 'POST' &&
+              Boolean(requireIdempotencyKey(request)),
           })
         } catch (error) {
           const code = error instanceof Error ? error.message : 'ACCOUNT_ERROR'
@@ -1256,64 +1262,27 @@ export default {
       }
       return await routeApi(routedRequest, env)
     } catch (error) {
-      if (error instanceof AccessAuthError) {
+      if (
+        error instanceof AccessAuthError ||
+        error instanceof LearningDomainError ||
+        error instanceof AdminAuthError ||
+        error instanceof ContentPipelineError ||
+        error instanceof QuizDomainError ||
+        error instanceof DictionaryDomainError ||
+        error instanceof EmailDeliveryError ||
+        error instanceof EmailSubscriptionError ||
+        error instanceof RequestValidationError ||
+        error instanceof EmailRenderError
+      ) {
+        const status =
+          error instanceof RequestValidationError
+            ? 400
+            : error instanceof EmailRenderError
+              ? 422
+              : error.status
         return json(
           { error: { code: error.code, message: error.message } },
-          { status: error.status },
-        )
-      }
-      if (error instanceof LearningDomainError) {
-        return json(
-          { error: { code: error.code, message: error.message } },
-          { status: error.status },
-        )
-      }
-      if (error instanceof RequestValidationError) {
-        return json(
-          { error: { code: error.code, message: error.message } },
-          { status: 400 },
-        )
-      }
-      if (error instanceof AdminAuthError) {
-        return json(
-          { error: { code: error.code, message: error.message } },
-          { status: error.status },
-        )
-      }
-      if (error instanceof ContentPipelineError) {
-        return json(
-          { error: { code: error.code, message: error.message } },
-          { status: error.status },
-        )
-      }
-      if (error instanceof QuizDomainError) {
-        return json(
-          { error: { code: error.code, message: error.message } },
-          { status: error.status },
-        )
-      }
-      if (error instanceof DictionaryDomainError) {
-        return json(
-          { error: { code: error.code, message: error.message } },
-          { status: error.status },
-        )
-      }
-      if (error instanceof EmailDeliveryError) {
-        return json(
-          { error: { code: error.code, message: error.message } },
-          { status: error.status },
-        )
-      }
-      if (error instanceof EmailRenderError) {
-        return json(
-          { error: { code: error.code, message: error.message } },
-          { status: 422 },
-        )
-      }
-      if (error instanceof EmailSubscriptionError) {
-        return json(
-          { error: { code: error.code, message: error.message } },
-          { status: error.status },
+          { status },
         )
       }
       console.error(

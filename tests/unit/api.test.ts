@@ -16,6 +16,38 @@ afterEach(() => {
 })
 
 describe('browser API client', () => {
+  it.each([200, 503])(
+    'handles JSON null at HTTP %s as a structured API error',
+    async (status) => {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(() => Promise.resolve(Response.json(null, { status }))),
+      )
+      await expect(
+        apiGet('/api/example', z.object({ ok: z.boolean() })),
+      ).rejects.toBeInstanceOf(ApiError)
+    },
+  )
+
+  it('preserves cancellation while reading the response body', async () => {
+    const controller = new AbortController()
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() =>
+        Promise.resolve({
+          ok: true,
+          status: 200,
+          json: () => {
+            controller.abort()
+            return Promise.reject(new DOMException('Aborted', 'AbortError'))
+          },
+        }),
+      ),
+    )
+    await expect(
+      apiGet('/api/example', z.object({ ok: z.boolean() }), controller.signal),
+    ).rejects.toHaveProperty('name', 'AbortError')
+  })
   it('validates successful response data at runtime', async () => {
     vi.stubGlobal(
       'fetch',

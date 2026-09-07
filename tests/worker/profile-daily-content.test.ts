@@ -6,6 +6,29 @@ import { ensureAppProfile } from '../../worker/services/learning'
 import { ensureProfileDailyContent } from '../../worker/services/profile-daily-content'
 
 describe('profile daily content seed reserve', () => {
+  it('treats a concurrent cross-account fingerprint collision as a resampling opportunity', async () => {
+    const contentDate = '2026-09-29'
+    const candidate = createSeedCandidates(contentDate)[0]
+    for (const profileId of ['collision-a', 'collision-b'])
+      await ensureAppProfile({
+        db: env.DB,
+        profileId,
+        timeZone: 'Asia/Shanghai',
+      })
+    const results = await Promise.all(
+      ['collision-a', 'collision-b'].map((profileId) =>
+        tryInsertProfileDailyContent({
+          db: env.DB,
+          profileId,
+          contentDate,
+          candidate,
+          source: 'seed',
+        }),
+      ),
+    )
+    expect(results.filter(Boolean)).toHaveLength(1)
+    expect(results.filter((value) => value === undefined)).toHaveLength(1)
+  })
   it('does not disguise a D1 insert failure as content exhaustion', async () => {
     const profileId = 'profile-insert-failure'
     const contentDate = '2026-09-30'

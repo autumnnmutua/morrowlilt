@@ -215,7 +215,10 @@ export async function ensureProfileDailyContent(input: {
     )
     const combinations =
       unusedSeedIndexes.length * unusedExpressionIndexes.length
-    const attempts = Math.min(combinations, dateFingerprints.size + 1)
+    const attempts = Math.min(
+      combinations,
+      Math.max(3, dateFingerprints.size + 1),
+    )
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const seedIndex =
         unusedSeedIndexes[(seedStart + attempt) % unusedSeedIndexes.length]

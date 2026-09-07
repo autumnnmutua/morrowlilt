@@ -83,6 +83,7 @@ export async function apiRequest<T>(
     try {
       body = await response.json()
     } catch {
+      if (controller.signal.aborted) throw abortError(controller.signal)
       throw new ApiError(
         '服务返回了无法读取的数据',
         'INVALID_JSON_RESPONSE',
@@ -91,20 +92,26 @@ export async function apiRequest<T>(
     }
 
     if (!response.ok) {
-      const error = body as { error?: { code?: unknown; message?: unknown } }
+      const error =
+        body &&
+        typeof body === 'object' &&
+        'error' in body &&
+        body.error &&
+        typeof body.error === 'object'
+          ? (body.error as { code?: unknown; message?: unknown })
+          : undefined
       throw new ApiError(
-        typeof error.error?.message === 'string'
-          ? error.error.message
+        typeof error?.message === 'string'
+          ? error.message
           : `请求失败（${response.status}）`,
-        typeof error.error?.code === 'string'
-          ? error.error.code
-          : 'REQUEST_FAILED',
+        typeof error?.code === 'string' ? error.code : 'REQUEST_FAILED',
         response.status,
       )
     }
 
-    const envelope = body as { data?: unknown }
-    const parsed = schema.safeParse(usesEnvelope ? envelope.data : body)
+    const data =
+      body && typeof body === 'object' && 'data' in body ? body.data : undefined
+    const parsed = schema.safeParse(usesEnvelope ? data : body)
     if (!parsed.success) {
       throw new ApiError(
         '服务返回的数据结构不符合预期',

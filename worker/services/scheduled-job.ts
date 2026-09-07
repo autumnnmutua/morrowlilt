@@ -1,7 +1,7 @@
 import { EmailRenderError, renderDailyEmail } from '../email/render'
 import { ExternalServiceError } from '../http/fetch-json'
-import { HttpContentProvider } from '../providers/http-content'
-import type { ContentProvider, EmailProvider } from '../providers/contracts'
+import { getOnlineContentProvider } from '../providers/content-provider'
+import type { EmailProvider } from '../providers/contracts'
 import { ResendEmailProvider } from '../providers/resend'
 import {
   buildEmailDeliveryKey,
@@ -12,22 +12,20 @@ import {
   type EmailDeliveryType,
 } from '../repository/email-delivery'
 import type { PersistedDailyContent } from '../repository/daily-content'
-import { getVerifiedEmailRecipient } from '../repository/email-subscription'
+import {
+  getEmailSubscription,
+  getVerifiedEmailRecipient,
+} from '../repository/email-subscription'
 import { listVerifiedEmailTargets } from '../repository/email-provider'
 import {
-  getContentProviderConfig,
   getPublicSiteUrl,
   getResendConfig,
   getResendSenderConfig,
   getUserSecretEncryptionKey,
-  getWorkersAiBinding,
-  isWorkersAiContentEnabled,
 } from '../runtime-config'
 import { getBusinessDate, getBusinessHour } from '../time/business-date'
-import { ContentPipelineError, ensureDailyContent } from './daily-content'
-import { ensureDailyLearningPackage } from './daily-package'
+import { ContentPipelineError } from './daily-content'
 import { ensureAppProfile } from './learning'
-import { WorkersAiContentProvider } from '../providers/workers-ai'
 import { decryptSecret } from '../security/secret-envelope'
 import { ensureProfileDailyContent } from './profile-daily-content'
 
@@ -167,39 +165,21 @@ export async function deliverDailyEmail(input: {
   }
 }
 
-function getOnlineProvider(env: Env): ContentProvider | undefined {
-  const config = getContentProviderConfig(env)
-  if (config) return new HttpContentProvider(config.endpoint, config.apiKey)
-  const ai = getWorkersAiBinding(env)
-  return isWorkersAiContentEnabled(env) && ai
-    ? new WorkersAiContentProvider(ai)
-    : undefined
-}
-
-export async function ensureEmailContent(
-  env: Env,
-  contentDate: string,
-): Promise<PersistedDailyContent> {
-  return ensureDailyContent({
-    db: env.DB,
-    contentDate,
-    timeZone: env.APP_TIME_ZONE,
-    onlineProvider: getOnlineProvider(env),
-  })
-}
-
 async function ensureEmailPackage(
   env: Env,
   contentDate: string,
 ): Promise<PersistedDailyContent> {
-  await ensureAppProfile({
+  const profile = await ensureAppProfile({
     db: env.DB,
     profileId: 'default',
     timeZone: env.APP_TIME_ZONE,
   })
-  const content = await ensureEmailContent(env, contentDate)
-  await ensureDailyLearningPackage({ db: env.DB, content })
-  return content
+  return ensureProfileEmailPackage({
+    env,
+    profileId: profile.id,
+    contentDate,
+    timeZone: profile.timeZone,
+  })
 }
 
 async function ensureProfileEmailPackage(input: {
@@ -213,7 +193,7 @@ async function ensureProfileEmailPackage(input: {
     profileId: input.profileId,
     contentDate: input.contentDate,
     timeZone: input.timeZone,
-    onlineProvider: getOnlineProvider(input.env),
+    onlineProvider: getOnlineContentProvider(input.env),
   })
 }
 
@@ -227,11 +207,30 @@ export async function runScheduledDailyJob(
     ? storedTargets.filter((target) => target.profileId !== 'default')
     : storedTargets
   if (platform) {
-    targets.push({
-      profileId: 'default',
-      email: platform.recipientEmail,
-      timeZone: env.APP_TIME_ZONE,
-    })
+    const [subscription, account] = await Promise.all([
+      getEmailSubscription(env.DB, 'default'),
+      env.DB.prepare(
+        "SELECT status FROM accounts WHERE profile_id = 'default'",
+      ).first<{ status: string }>(),
+    ])
+    // A configured fallback must never override an explicit opt-out or disable.
+    if (
+      account?.status !== 'disabled' &&
+      subscription?.status !== 'unsubscribed'
+    )
+      targets.push({
+        profileId: 'default',
+        // An unconfirmed replacement must not receive mail or suspend the
+        // deployment owner's explicitly configured, pre-existing recipient.
+        email:
+          subscription?.status === 'verified'
+            ? subscription.email
+            : platform.recipientEmail,
+        timeZone:
+          subscription?.status === 'verified'
+            ? subscription.timeZone
+            : env.APP_TIME_ZONE,
+      })
   }
   const encryptionSecret = getUserSecretEncryptionKey(env)
   let sent = 0

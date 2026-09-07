@@ -119,6 +119,14 @@ export async function ensureAccountForIdentity(input: {
   }
 
   const existingEmailAccount = await findByEmailHash(input.db, emailHash)
+  const revoked = await input.db
+    .prepare(
+      "SELECT 1 AS found FROM auth_identities WHERE issuer = ? AND subject = ? AND status = 'revoked'",
+    )
+    .bind(input.identity.issuer, input.identity.subject)
+    .first()
+  if (revoked && !input.allowReauthorize)
+    throw new Error('ACCESS_IDENTITY_REVOKED')
   if (existingEmailAccount?.status === 'disabled' && !input.allowReauthorize) {
     throw new Error('ACCOUNT_DISABLED')
   }
@@ -155,10 +163,18 @@ export async function ensureAccountForIdentity(input: {
            id, profile_id, login_email_hash, status, version, created_at, updated_at
          ) VALUES (?, ?, ?, 'active', 1, ?, ?)
          ON CONFLICT(login_email_hash) DO UPDATE SET
-           status = 'active', version = accounts.version + 1,
+           status = CASE WHEN ? = 1 THEN 'active' ELSE accounts.status END,
+           version = accounts.version + 1,
            updated_at = excluded.updated_at`,
       )
-      .bind(accountId, profileId, emailHash, now, now),
+      .bind(
+        accountId,
+        profileId,
+        emailHash,
+        now,
+        now,
+        input.allowReauthorize ? 1 : 0,
+      ),
     input.db
       .prepare(
         `INSERT INTO auth_identities (
@@ -192,6 +208,7 @@ export async function ensureAccountForIdentity(input: {
     input.identity.subject,
   )
   if (!account) throw new Error('ACCOUNT_PROVISION_FAILED')
+  if (account.status !== 'active') throw new Error('ACCOUNT_DISABLED')
   return account
 }
 
