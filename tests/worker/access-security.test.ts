@@ -1,14 +1,17 @@
 import { env } from 'cloudflare:test'
 import { exportJWK, generateKeyPair, SignJWT } from 'jose'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   AccessAuthError,
   requireAccessAuthorization,
   requireSameOriginMutation,
+  verifyAccessJwt,
 } from '../../worker/http/access-auth'
 
 const issuer = 'https://private-study.cloudflareaccess.com'
 const audience = 'private-study-audience'
+
+afterEach(() => vi.unstubAllGlobals())
 
 function accessEnv(overrides: Partial<Env> = {}): Env {
   return {
@@ -55,6 +58,22 @@ describe('private Access and same-origin gates', () => {
       issuer,
       subject: 'access-user-fixture',
     })
+  })
+
+  it('reuses the remote Access JWKS cache between requests', async () => {
+    const cachedIssuer = `https://cache-${crypto.randomUUID()}.cloudflareaccess.com`
+    const { token, jwks } = await signedAccessToken({ issuer: cachedIssuer })
+    const fetchMock = vi.fn(() => Promise.resolve(Response.json(jwks)))
+    vi.stubGlobal('fetch', fetchMock)
+    const config = {
+      issuer: cachedIssuer,
+      audience,
+      jwksUrl: `${cachedIssuer}/cdn-cgi/access/certs`,
+    }
+
+    await expect(verifyAccessJwt(token, config)).resolves.toBeDefined()
+    await expect(verifyAccessJwt(token, config)).resolves.toBeDefined()
+    expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
   it.each([

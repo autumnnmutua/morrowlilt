@@ -3,11 +3,374 @@ import type {
   ContentGenerationContext,
   ContentProvider,
   DailyContentCandidate,
+  DailyContentPayload,
   DictionaryTranslationProvider,
 } from './contracts'
 
-const model = '@cf/meta/llama-3.1-8b-instruct-fp8' as const
+const model = '@cf/meta/llama-3.3-70b-instruct-fp8-fast' as const
 const translationModel = '@cf/meta/m2m100-1.2b' as const
+
+export const compactDailyContentSchema = {
+  type: 'object',
+  additionalProperties: false,
+  properties: {
+    theme: {
+      enum: [
+        'learning',
+        'campus',
+        'technology',
+        'environment',
+        'work',
+        'health',
+        'city',
+        'culture',
+      ],
+    },
+    sentence: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        english: { type: 'string', minLength: 40, maxLength: 240 },
+        chinese: { type: 'string', minLength: 12, maxLength: 240 },
+        grammarNote: { type: 'string', minLength: 4, maxLength: 160 },
+        usageNote: { type: 'string', minLength: 4, maxLength: 160 },
+        microExercise: { type: 'string', minLength: 12, maxLength: 240 },
+      },
+      required: [
+        'english',
+        'chinese',
+        'grammarNote',
+        'usageNote',
+        'microExercise',
+      ],
+    },
+    vocabulary: {
+      type: 'array',
+      minItems: 3,
+      maxItems: 3,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          kind: { enum: ['word', 'phrase', 'expression'] },
+          term: { type: 'string', minLength: 2, maxLength: 80 },
+          partOfSpeech: { type: 'string', minLength: 2, maxLength: 60 },
+          definition: { type: 'string', minLength: 4, maxLength: 180 },
+          definitionZh: { type: 'string', minLength: 2, maxLength: 100 },
+          example: { type: 'string', minLength: 12, maxLength: 220 },
+          exampleZh: { type: 'string', minLength: 4, maxLength: 180 },
+        },
+        required: [
+          'kind',
+          'term',
+          'partOfSpeech',
+          'definition',
+          'definitionZh',
+          'example',
+          'exampleZh',
+        ],
+      },
+    },
+    practicalExpressions: {
+      type: 'array',
+      minItems: 3,
+      maxItems: 3,
+      items: {
+        type: 'object',
+        additionalProperties: false,
+        properties: {
+          expression: { type: 'string', minLength: 2, maxLength: 100 },
+          expressionType: {
+            enum: ['phrase', 'idiom', 'response', 'phrasal_verb', 'slang'],
+          },
+          partOfSpeech: { type: 'string', minLength: 2, maxLength: 60 },
+          chineseMeanings: {
+            type: 'array',
+            minItems: 2,
+            maxItems: 3,
+            items: { type: 'string', minLength: 2, maxLength: 80 },
+          },
+          coreMeaning: { type: 'string', minLength: 8, maxLength: 220 },
+          context: { type: 'string', minLength: 6, maxLength: 160 },
+          example: { type: 'string', minLength: 8, maxLength: 180 },
+          exampleZh: { type: 'string', minLength: 4, maxLength: 160 },
+          alternative: {
+            type: 'object',
+            additionalProperties: false,
+            properties: {
+              expression: { type: 'string', minLength: 2, maxLength: 100 },
+              nuance: { type: 'string', minLength: 4, maxLength: 140 },
+            },
+            required: ['expression', 'nuance'],
+          },
+        },
+        required: [
+          'expression',
+          'expressionType',
+          'partOfSpeech',
+          'chineseMeanings',
+          'coreMeaning',
+          'context',
+          'example',
+          'exampleZh',
+          'alternative',
+        ],
+      },
+    },
+    topic: {
+      type: 'object',
+      additionalProperties: false,
+      properties: {
+        prompt: { type: 'string', minLength: 20, maxLength: 300 },
+        preparationPoints: {
+          type: 'array',
+          minItems: 3,
+          maxItems: 3,
+          items: { type: 'string', minLength: 4, maxLength: 160 },
+        },
+      },
+      required: ['prompt', 'preparationPoints'],
+    },
+  },
+  required: [
+    'theme',
+    'sentence',
+    'vocabulary',
+    'practicalExpressions',
+    'topic',
+  ],
+} as const
+
+type JsonRecord = Record<string, unknown>
+
+function requireRecord(value: unknown, code: string): JsonRecord {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(code)
+  }
+  return value as JsonRecord
+}
+
+function requireString(value: unknown, code: string): string {
+  if (typeof value !== 'string') throw new Error(code)
+  return value
+}
+
+function requireArray(value: unknown, length: number, code: string): unknown[] {
+  if (!Array.isArray(value) || value.length !== length) throw new Error(code)
+  return value
+}
+
+function requireStringArray(
+  value: unknown,
+  minLength: number,
+  maxLength: number,
+  code: string,
+): string[] {
+  if (
+    !Array.isArray(value) ||
+    value.length < minLength ||
+    value.length > maxLength ||
+    !value.every((item) => typeof item === 'string')
+  ) {
+    throw new Error(code)
+  }
+  return value
+}
+
+function requireTheme(value: unknown): DailyContentPayload['theme'] {
+  const themes: ReadonlySet<string> = new Set([
+    'learning',
+    'campus',
+    'technology',
+    'environment',
+    'work',
+    'health',
+    'city',
+    'culture',
+  ])
+  if (typeof value !== 'string' || !themes.has(value)) {
+    throw new Error('WORKERS_AI_INVALID_THEME')
+  }
+  return value as DailyContentPayload['theme']
+}
+
+export function buildCandidateFromCompactOutput(
+  output: unknown,
+  contentDate: string,
+  provider: string,
+): DailyContentCandidate {
+  const root = requireRecord(parseResponse(output), 'WORKERS_AI_INVALID_ROOT')
+  const sentence = requireRecord(root.sentence, 'WORKERS_AI_INVALID_SENTENCE')
+  const vocabulary = requireArray(
+    root.vocabulary,
+    3,
+    'WORKERS_AI_INVALID_VOCABULARY',
+  ).map((value) => {
+    const item = requireRecord(value, 'WORKERS_AI_INVALID_VOCABULARY_ITEM')
+    return {
+      kind: requireString(item.kind, 'WORKERS_AI_INVALID_VOCABULARY_KIND'),
+      term: requireString(item.term, 'WORKERS_AI_INVALID_VOCABULARY_TERM'),
+      partOfSpeech: requireString(
+        item.partOfSpeech,
+        'WORKERS_AI_INVALID_VOCABULARY_POS',
+      ),
+      definition: requireString(
+        item.definition,
+        'WORKERS_AI_INVALID_VOCABULARY_DEFINITION',
+      ),
+      definitionZh: requireString(
+        item.definitionZh,
+        'WORKERS_AI_INVALID_VOCABULARY_DEFINITION_ZH',
+      ),
+      example: requireString(
+        item.example,
+        'WORKERS_AI_INVALID_VOCABULARY_EXAMPLE',
+      ),
+      exampleZh: requireString(
+        item.exampleZh,
+        'WORKERS_AI_INVALID_VOCABULARY_EXAMPLE_ZH',
+      ),
+      usageNote: '结合词性、搭配和完整语境记忆，避免只背单一中文对译。',
+    }
+  })
+  const practicalExpressions = requireArray(
+    root.practicalExpressions,
+    3,
+    'WORKERS_AI_INVALID_EXPRESSIONS',
+  ).map((value) => {
+    const item = requireRecord(value, 'WORKERS_AI_INVALID_EXPRESSION_ITEM')
+    const alternative = requireRecord(
+      item.alternative,
+      'WORKERS_AI_INVALID_EXPRESSION_ALTERNATIVE',
+    )
+    return {
+      expression: requireString(
+        item.expression,
+        'WORKERS_AI_INVALID_EXPRESSION',
+      ),
+      expressionType: requireString(
+        item.expressionType,
+        'WORKERS_AI_INVALID_EXPRESSION_TYPE',
+      ),
+      partOfSpeech: requireString(
+        item.partOfSpeech,
+        'WORKERS_AI_INVALID_EXPRESSION_POS',
+      ),
+      chineseMeanings: requireStringArray(
+        item.chineseMeanings,
+        2,
+        3,
+        'WORKERS_AI_INVALID_EXPRESSION_MEANINGS',
+      ),
+      coreMeaning: requireString(
+        item.coreMeaning,
+        'WORKERS_AI_INVALID_EXPRESSION_CORE',
+      ),
+      usageNotes: [
+        `常用于${requireString(item.context, 'WORKERS_AI_INVALID_EXPRESSION_CONTEXT')}；先判断双方关系与语气，再把整段表达作为词块使用。`,
+      ],
+      scenarios: [
+        {
+          label: '情景实战',
+          description: requireString(
+            item.context,
+            'WORKERS_AI_INVALID_EXPRESSION_CONTEXT',
+          ),
+          example: requireString(
+            item.example,
+            'WORKERS_AI_INVALID_EXPRESSION_EXAMPLE',
+          ),
+          exampleZh: requireString(
+            item.exampleZh,
+            'WORKERS_AI_INVALID_EXPRESSION_EXAMPLE_ZH',
+          ),
+        },
+        {
+          label: '迁移练习',
+          description: '换一个人物或场景复述同类意思，体会语气变化。',
+          example: `Try using "${requireString(item.expression, 'WORKERS_AI_INVALID_EXPRESSION')}" in a different situation today.`,
+          exampleZh: '今天试着在另一个合适的情境中使用这段表达。',
+        },
+      ],
+      pitfalls: [
+        '不要按字面逐词翻译，也不要在明显不合适的正式语境中生搬硬套。',
+      ],
+      alternatives: [
+        {
+          expression: requireString(
+            alternative.expression,
+            'WORKERS_AI_INVALID_ALTERNATIVE_EXPRESSION',
+          ),
+          nuance: requireString(
+            alternative.nuance,
+            'WORKERS_AI_INVALID_ALTERNATIVE_NUANCE',
+          ),
+        },
+      ],
+      ieltsUse:
+        '可迁移到听力和阅读中的语气识别，并帮助理解自然交流中的隐含态度。',
+    }
+  })
+  const topic = requireRecord(root.topic, 'WORKERS_AI_INVALID_TOPIC')
+  const payload: DailyContentPayload = {
+    schemaVersion: 2,
+    contentDate,
+    difficulty: 'C1',
+    theme: requireTheme(root.theme),
+    originType: 'ai_assisted',
+    generatorVersion: 'workers-ai-v3',
+    sentence: {
+      english: requireString(
+        sentence.english,
+        'WORKERS_AI_INVALID_SENTENCE_ENGLISH',
+      ),
+      chinese: requireString(
+        sentence.chinese,
+        'WORKERS_AI_INVALID_SENTENCE_CHINESE',
+      ),
+      grammarNotes: [
+        requireString(sentence.grammarNote, 'WORKERS_AI_INVALID_GRAMMAR_NOTE'),
+      ],
+      usageNotes: [
+        requireString(sentence.usageNote, 'WORKERS_AI_INVALID_USAGE_NOTE'),
+      ],
+      collocations: vocabulary.slice(0, 2).map((item) => ({
+        expression: item.term,
+        meaning: item.definitionZh,
+      })),
+      alternatives: practicalExpressions.slice(0, 2).map((item) => ({
+        expression: item.expression,
+        note: item.chineseMeanings.join('；'),
+      })),
+      microExercise: requireString(
+        sentence.microExercise,
+        'WORKERS_AI_INVALID_MICRO_EXERCISE',
+      ),
+    },
+    vocabulary: vocabulary as DailyContentPayload['vocabulary'],
+    practicalExpressions:
+      practicalExpressions as DailyContentPayload['practicalExpressions'],
+    topic: {
+      kind: 'writing',
+      prompt: requireString(topic.prompt, 'WORKERS_AI_INVALID_TOPIC_PROMPT'),
+      preparationPoints: requireStringArray(
+        topic.preparationPoints,
+        3,
+        3,
+        'WORKERS_AI_INVALID_TOPIC_POINTS',
+      ),
+    },
+  }
+  return validateAndSanitizeDailyContentCandidate(
+    {
+      payload,
+      provider,
+      attribution: 'MorrowLilt 每日学习材料',
+    },
+    contentDate,
+    provider,
+  )
+}
 
 function parseResponse(output: unknown): unknown {
   if (
@@ -97,30 +460,28 @@ export class WorkersAiContentProvider implements ContentProvider {
           },
           {
             role: 'user',
-            content: `Create one unique daily package for ${contentDate} in ${timeZone}. Use variation nonce ${variation.nonce}; it is not user data and must not appear in the output. Avoid every sentence, vocabulary term and practical expression in this recent 30-day material: ${recent}. Include exactly 3 useful vocabulary items and exactly 3 idiomatic practical expressions. Every vocabulary item must have a precise part of speech, natural Chinese meaning, English example, Chinese example translation and usage note. Practical expressions must feel current but not ephemeral, and cover real friend chat, offline interaction, games or Discord without forcing slang. Give multiple Chinese meanings, metaphor/core meaning, two concrete scenarios, mistake prevention, a nuanced alternative and a formal exam-use transfer. Return exactly this JSON shape: {"schemaVersion":2,"contentDate":"${contentDate}","difficulty":"C1","theme":"learning|campus|technology|environment|work|health|city|culture","originType":"ai_assisted","generatorVersion":"workers-ai-v2","sentence":{"english":"40-240 English characters","chinese":"natural Chinese translation","grammarNotes":["Chinese note"],"usageNotes":["Chinese note"],"collocations":[{"expression":"English","meaning":"Chinese"},{"expression":"English","meaning":"Chinese"}],"alternatives":[{"expression":"English","note":"Chinese"},{"expression":"English","note":"Chinese"}],"microExercise":"English exercise"},"vocabulary":[{"kind":"word|phrase|expression","term":"English","partOfSpeech":"precise Chinese POS","definition":"English definition","definitionZh":"complete Chinese definition","example":"English example","exampleZh":"natural Chinese translation","usageNote":"Chinese usage note"}],"practicalExpressions":[{"expression":"natural English sentence","expressionType":"phrase|idiom|response|phrasal_verb|slang","partOfSpeech":"Chinese expression type","chineseMeanings":["Chinese meaning 1","Chinese meaning 2"],"coreMeaning":"Chinese metaphor and semantic core","usageNotes":["Chinese register or nuance note"],"scenarios":[{"label":"Chinese scenario label","description":"Chinese concrete situation","example":"English dialogue/example","exampleZh":"Chinese translation"},{"label":"Chinese scenario label","description":"Chinese concrete situation","example":"English dialogue/example","exampleZh":"Chinese translation"}],"pitfalls":["Chinese mistake warning"],"alternatives":[{"expression":"English alternative","nuance":"Chinese contrast"}],"ieltsUse":"Chinese explanation of formal listening/reading/writing transfer"}],"topic":{"kind":"writing","prompt":"original English analytical prompt","preparationPoints":["Chinese planning point","Chinese planning point","Chinese planning point"]}}. Repeat the vocabulary object 3 times and the practicalExpressions object 3 times with different content. Attempt ${context.attempt}.`,
+            content: `Create one unique compact daily package for ${contentDate} in ${timeZone}. Use variation nonce ${variation.nonce}; it must not appear in the output. Avoid every sentence, vocabulary term and practical expression in this recent 30-day material: ${recent}. Include exactly 3 C1 vocabulary items with complete Chinese meanings and examples, plus exactly 3 natural expressions useful in friend chat, offline interaction, gaming or online communities. Give each expression one concrete context, a natural bilingual example and one nuanced alternative. The microExercise and topic prompt must be English. Keep every Chinese field concise and natural. Do not copy published questions, include HTML, invent a source or include personal data. Attempt ${context.attempt}.`,
           },
         ],
-        response_format: { type: 'json_object' },
-        max_tokens: 3800,
+        response_format: {
+          type: 'json_schema',
+          json_schema: compactDailyContentSchema,
+        },
+        max_tokens: 2800,
         seed: variation.seed,
-        temperature: 0.78,
+        temperature: 0.65,
         frequency_penalty: 0.5,
         presence_penalty: 0.45,
       },
       {
-        signal: requestSignal(signal),
+        // Daily packages are substantially larger than dictionary responses.
+        // Ten seconds was too aggressive in production and could abort a
+        // healthy Workers AI generation before Resend was ever reached.
+        signal: requestSignal(signal, 90_000),
         tags: ['daily-content', `attempt:${context.attempt}`],
       },
     )
-    return validateAndSanitizeDailyContentCandidate(
-      {
-        payload: parseResponse(output),
-        provider: this.name,
-        attribution: 'MorrowLilt 每日学习材料',
-      },
-      contentDate,
-      this.name,
-    )
+    return buildCandidateFromCompactOutput(output, contentDate, this.name)
   }
 }
 

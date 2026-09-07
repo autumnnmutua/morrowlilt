@@ -276,7 +276,62 @@ describe('Resend error policy', () => {
 })
 
 describe('scheduled and administrator email entry points', () => {
+  it('prepares the daily content one hour before send time without sending', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        Response.json({ id: 'unexpected-provider-message' }, { status: 200 }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runScheduledDailyJob(Date.parse('2026-11-08T14:00:00.000Z'), {
+      ...env,
+      MAIL_SEND_HOUR_LOCAL: '23',
+    } as unknown as Env)
+
+    const prepared = await env.DB.prepare(
+      `SELECT content_date FROM profile_daily_content
+       WHERE profile_id = 'default' AND content_date = '2026-11-08'`,
+    ).first<{ content_date: string }>()
+    expect(prepared).toEqual({ content_date: '2026-11-08' })
+    expect(fetchMock).not.toHaveBeenCalled()
+    expect(logSpy).toHaveBeenCalledWith(
+      JSON.stringify({
+        event: 'daily_email_content_ready',
+        contentDate: '2026-11-08',
+      }),
+    )
+  })
+
+  it('prepares the new business day while preserving the previous-day catch-up window', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        Response.json({ id: 'midnight-catch-up-message' }, { status: 200 }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await runScheduledDailyJob(Date.parse('2026-11-10T16:00:00.000Z'), {
+      ...env,
+      MAIL_SEND_HOUR_LOCAL: '23',
+    } as unknown as Env)
+
+    const prepared = await env.DB.prepare(
+      `SELECT content_date FROM profile_daily_content
+       WHERE profile_id = 'default' AND content_date = '2026-11-11'`,
+    ).first<{ content_date: string }>()
+    const delivery = await env.DB.prepare(
+      `SELECT content_date, status FROM email_deliveries
+       WHERE profile_id = 'default' AND delivery_type = 'scheduled'`,
+    ).first<{ content_date: string; status: string }>()
+    expect(prepared).toEqual({ content_date: '2026-11-11' })
+    expect(delivery).toEqual({ content_date: '2026-11-10', status: 'sent' })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
   it('deduplicates repeated scheduled triggers for the same local date', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined)
     const fetchMock = vi.fn(() =>
       Promise.resolve(
         Response.json({ id: 'provider-message-fixture' }, { status: 200 }),
@@ -286,6 +341,39 @@ describe('scheduled and administrator email entry points', () => {
     const scheduledTime = Date.parse('2026-11-09T00:00:00.000Z')
     await runScheduledDailyJob(scheduledTime, env)
     await runScheduledDailyJob(scheduledTime, env)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(logSpy).toHaveBeenLastCalledWith(
+      JSON.stringify({
+        event: 'daily_email_completed',
+        sent: 0,
+        alreadySent: 1,
+        skipped: 0,
+        failed: 0,
+      }),
+    )
+  })
+
+  it('catches up a missed local date after midnight without duplicating it', async () => {
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(
+        Response.json({ id: 'catch-up-message-fixture' }, { status: 200 }),
+      ),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    const scheduledTime = Date.parse('2026-12-02T01:00:00.000Z')
+    const catchUpEnv = {
+      ...env,
+      MAIL_SEND_HOUR_LOCAL: '23',
+    } as unknown as Env
+
+    await runScheduledDailyJob(scheduledTime, catchUpEnv)
+    await runScheduledDailyJob(scheduledTime, catchUpEnv)
+
+    const delivery = await env.DB.prepare(
+      `SELECT content_date, status FROM email_deliveries
+       WHERE profile_id = 'default' AND delivery_type = 'scheduled'`,
+    ).first<{ content_date: string; status: string }>()
+    expect(delivery).toEqual({ content_date: '2026-12-01', status: 'sent' })
     expect(fetchMock).toHaveBeenCalledTimes(1)
   })
 
@@ -333,6 +421,70 @@ describe('scheduled and administrator email entry points', () => {
     ).first<{ profile_id: string }>()
     expect(fetchMock).toHaveBeenCalledTimes(1)
     expect(delivery?.profile_id).toBe('default')
+  })
+
+  it('does not backfill content from before a BYO sender became ready', async () => {
+    const loginEmail = ['new-login', 'example.invalid'].join('@')
+    const email = ['new-recipient', 'example.invalid'].join('@')
+    const readyAt = '2026-12-02T00:30:00.000Z'
+    const account = await ensureAccountForIdentity({
+      db: env.DB,
+      identity: {
+        issuer: 'https://local.invalid',
+        subject: `new-${crypto.randomUUID()}`,
+        email: loginEmail,
+      },
+      defaultTimeZone: 'Asia/Shanghai',
+      now: new Date(readyAt),
+    })
+    await env.DB.prepare(
+      `INSERT INTO users (
+         id, profile_id, email, email_hash, timezone, email_status,
+         verification_token_hash, verification_expires_at, verified_at,
+         unsubscribed_at, version, created_at, updated_at
+       ) VALUES (?, ?, ?, ?, 'Asia/Shanghai', 'verified', NULL, NULL, ?, NULL, 1, ?, ?)`,
+    )
+      .bind(
+        crypto.randomUUID(),
+        account.profileId,
+        email,
+        await hashEmailRecipient(email),
+        readyAt,
+        readyAt,
+        readyAt,
+      )
+      .run()
+
+    const encryptionSecret = 'new-byo-encryption-secret-32-chars'
+    await configureUserEmailProvider({
+      db: env.DB,
+      profileId: account.profileId,
+      apiKey: ['re', 'new', 'byo', 'fixture', 'key'].join('_'),
+      mailFrom,
+      sendHourLocal: 23,
+      encryptionSecret,
+    })
+    await env.DB.prepare(
+      `UPDATE email_provider_credentials
+       SET created_at = ?, updated_at = ? WHERE profile_id = ?`,
+    )
+      .bind(readyAt, readyAt, account.profileId)
+      .run()
+
+    const fetchMock = vi.fn(() =>
+      Promise.resolve(Response.json({ id: 'unexpected-message' })),
+    )
+    vi.stubGlobal('fetch', fetchMock)
+    await runScheduledDailyJob(Date.parse('2026-12-02T01:00:00.000Z'), {
+      ...env,
+      RESEND_API_KEY: '<PLACEHOLDER>',
+      RECIPIENT_EMAIL: '<PLACEHOLDER>',
+      MAIL_FROM: '<PLACEHOLDER>',
+      PUBLIC_SITE_URL: publicSiteUrl,
+      USER_SECRET_ENCRYPTION_KEY: encryptionSecret,
+    } as unknown as Env)
+
+    expect(fetchMock).not.toHaveBeenCalled()
   })
 
   it('requires authorization for preview and defaults explicit tests to the Resend test target', async () => {

@@ -3,7 +3,7 @@ import {
   contentSimilarity,
 } from '../content/fingerprint'
 import { validateAndSanitizeDailyContentCandidate } from '../content/schema'
-import { createSeedCandidates } from '../content/seeds'
+import { createSeedCandidate, createSeedCandidates } from '../content/seeds'
 import type {
   ContentProvider,
   DailyContentCandidate,
@@ -17,23 +17,32 @@ import {
   hasUsedProfileComponents,
   listFingerprintsForDate,
   listRecentProfileDailyContent,
+  listUsedProfileComponentValues,
   tryInsertProfileDailyContent,
 } from '../repository/profile-daily-content'
-import { practicalExpressionSeedCount } from '../content/practical-expressions'
+import {
+  practicalExpressionGroup,
+  practicalExpressionSeedCount,
+} from '../content/practical-expressions'
 import { ContentPipelineError } from './daily-content'
 
 const similarityThreshold = 0.82
 
-async function deterministicOffset(
-  value: string,
-  modulo: number,
-): Promise<number> {
-  const digest = await crypto.subtle.digest(
-    'SHA-256',
-    new TextEncoder().encode(value),
-  )
-  const view = new DataView(digest)
-  return view.getUint32(0, false) % modulo
+function deterministicOffset(value: string, modulo: number): number {
+  let hash = 0x811c9dc5
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return (hash >>> 0) % modulo
+}
+
+function normalizeComponent(value: string): string {
+  return value
+    .normalize('NFKC')
+    .trim()
+    .toLocaleLowerCase('en')
+    .replace(/\s+/g, ' ')
 }
 
 async function isNovelForProfile(input: {
@@ -42,6 +51,7 @@ async function isNovelForProfile(input: {
   candidate: DailyContentCandidate
   recent: PersistedDailyContent[]
   dateFingerprints: Set<string>
+  enforceSimilarity?: boolean
 }): Promise<boolean> {
   const payload = input.candidate.payload
   if (
@@ -72,7 +82,8 @@ async function isNovelForProfile(input: {
   return input.recent.every(
     (item) =>
       item.fingerprint !== fingerprint &&
-      contentSimilarity(item.payload, payload) < similarityThreshold,
+      (input.enforceSimilarity === false ||
+        contentSimilarity(item.payload, payload) < similarityThreshold),
   )
 }
 
@@ -86,7 +97,7 @@ async function onlineCandidate(input: {
   onlineProvider?: ContentProvider
 }): Promise<DailyContentCandidate | undefined> {
   if (!input.onlineProvider) return undefined
-  for (let attempt = 1; attempt <= 2; attempt += 1) {
+  for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
       const raw = await input.onlineProvider.generateDailyContent(
         input.contentDate,
@@ -103,7 +114,10 @@ async function onlineCandidate(input: {
             topic: item.payload.topic.prompt,
           })),
           regeneration: false,
-          variationKey: `${input.profileId}:${attempt}`,
+          // Content is immutable after the first successful insert, so failed
+          // provider attempts should not be replayed forever with the same
+          // deterministic seed on every Cron invocation.
+          variationKey: `${input.profileId}:${attempt}:${crypto.randomUUID()}`,
         },
       )
       const candidate = validateAndSanitizeDailyContentCandidate(
@@ -141,63 +155,87 @@ export async function ensureProfileDailyContent(input: {
   )
   if (existing) return existing
 
-  const recent = await listRecentProfileDailyContent(
-    input.db,
-    input.profileId,
-    input.contentDate,
-    30,
-  )
-  let dateFingerprints = await listFingerprintsForDate(
+  const dateFingerprints = await listFingerprintsForDate(
     input.db,
     input.contentDate,
   )
-  const online = await onlineCandidate({ ...input, recent, dateFingerprints })
-  if (online) {
-    const inserted = await tryInsertProfileDailyContent({
-      db: input.db,
-      profileId: input.profileId,
-      contentDate: input.contentDate,
-      candidate: online,
-      source: 'online',
+  if (input.onlineProvider) {
+    const recent = await listRecentProfileDailyContent(
+      input.db,
+      input.profileId,
+      input.contentDate,
+      30,
+    )
+    const online = await onlineCandidate({
+      ...input,
+      recent,
+      dateFingerprints,
     })
-    if (inserted) return inserted
+    if (online) {
+      const inserted = await tryInsertProfileDailyContent({
+        db: input.db,
+        profileId: input.profileId,
+        contentDate: input.contentDate,
+        candidate: online,
+        source: 'online',
+      })
+      if (inserted) return inserted
+    }
   }
 
-  const baseOffset = await deterministicOffset(
-    `${input.profileId}\u0000${input.contentDate}`,
-    practicalExpressionSeedCount,
+  const usedComponents = await listUsedProfileComponentValues(
+    input.db,
+    input.profileId,
   )
-  for (let attempt = 0; attempt < practicalExpressionSeedCount; attempt += 1) {
-    dateFingerprints = await listFingerprintsForDate(
-      input.db,
-      input.contentDate,
+  const baseCandidates = createSeedCandidates(input.contentDate)
+  const unusedSeedIndexes = baseCandidates.flatMap((candidate, index) => {
+    const values = [
+      candidate.payload.sentence.english,
+      ...candidate.payload.vocabulary.map((item) => item.term),
+    ].map(normalizeComponent)
+    return values.every((value) => !usedComponents.has(value)) ? [index] : []
+  })
+  const unusedExpressionIndexes = Array.from(
+    { length: practicalExpressionSeedCount },
+    (_, index) => index,
+  ).filter((index) =>
+    practicalExpressionGroup(index).every(
+      (item) => !usedComponents.has(normalizeComponent(item.expression)),
+    ),
+  )
+  if (unusedSeedIndexes.length > 0 && unusedExpressionIndexes.length > 0) {
+    const variationKey = `${input.profileId}\u0000${input.contentDate}`
+    const seedStart = deterministicOffset(
+      variationKey,
+      unusedSeedIndexes.length,
     )
-    const candidates = createSeedCandidates(
-      input.contentDate,
-      baseOffset + attempt,
+    const expressionStart = deterministicOffset(
+      `${variationKey}\u0000expressions`,
+      unusedExpressionIndexes.length,
     )
-    const start = await deterministicOffset(
-      `${input.profileId}\u0000${input.contentDate}\u0000${attempt}`,
-      candidates.length,
-    )
-    for (let index = 0; index < candidates.length; index += 1) {
-      const raw = candidates[(start + index) % candidates.length]
+    const combinations =
+      unusedSeedIndexes.length * unusedExpressionIndexes.length
+    const attempts = Math.min(combinations, dateFingerprints.size + 1)
+    for (let attempt = 0; attempt < attempts; attempt += 1) {
+      const seedIndex =
+        unusedSeedIndexes[(seedStart + attempt) % unusedSeedIndexes.length]
+      const expressionIndex =
+        unusedExpressionIndexes[
+          (expressionStart + Math.floor(attempt / unusedSeedIndexes.length)) %
+            unusedExpressionIndexes.length
+        ]
+      const raw = createSeedCandidate(
+        input.contentDate,
+        seedIndex,
+        expressionIndex,
+      )
       const candidate = validateAndSanitizeDailyContentCandidate(
         raw,
         input.contentDate,
         raw.provider,
       )
-      if (
-        !(await isNovelForProfile({
-          db: input.db,
-          profileId: input.profileId,
-          candidate,
-          recent,
-          dateFingerprints,
-        }))
-      ) {
-        continue
-      }
+      const fingerprint = await computeContentFingerprint(candidate.payload)
+      if (dateFingerprints.has(fingerprint)) continue
       const inserted = await tryInsertProfileDailyContent({
         db: input.db,
         profileId: input.profileId,

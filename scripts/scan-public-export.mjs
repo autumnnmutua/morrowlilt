@@ -75,6 +75,7 @@ function collectFiles(directory) {
   const output = []
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     if (entry.isDirectory() && ignoredDirectories.has(entry.name)) continue
+    if (entry.isFile() && entry.name === '.git') continue
     const path = resolve(directory, entry.name)
     if (entry.isDirectory()) output.push(...collectFiles(path))
     else if (entry.isFile()) output.push(path)
