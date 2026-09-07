@@ -44,6 +44,25 @@ async function signedAccessToken(input: {
 }
 
 describe('private Access and same-origin gates', () => {
+  it('rejects signed tokens with no expiration', async () => {
+    const { privateKey, publicKey } = await generateKeyPair('RS256')
+    const jwk = await exportJWK(publicKey)
+    jwk.kid = 'missing-expiration'
+    const token = await new SignJWT({ type: 'app' })
+      .setProtectedHeader({ alg: 'RS256', kid: jwk.kid })
+      .setIssuer(issuer)
+      .setAudience(audience)
+      .setSubject('audit-user')
+      .setIssuedAt()
+      .sign(privateKey)
+    await expect(
+      verifyAccessJwt(
+        token,
+        { issuer, audience, jwksUrl: `${issuer}/cdn-cgi/access/certs` },
+        { keys: [jwk] },
+      ),
+    ).rejects.toThrow()
+  })
   it('verifies signature, issuer and audience', async () => {
     const { token, jwks } = await signedAccessToken({})
     const request = new Request('https://study.example.com/api/health', {

@@ -95,7 +95,7 @@ export async function savePendingEmailSubscription(input: {
   }
   const userId = existing?.id ?? crypto.randomUUID()
   const now = new Date().toISOString()
-  await input.db.batch([
+  const results = await input.db.batch([
     input.db
       .prepare(
         `INSERT INTO users (
@@ -113,7 +113,11 @@ export async function savePendingEmailSubscription(input: {
            verified_at = NULL,
            unsubscribed_at = NULL,
            version = users.version + 1,
-           updated_at = excluded.updated_at`,
+           updated_at = excluded.updated_at
+         WHERE NOT EXISTS (
+           SELECT 1 FROM email_subscription_events
+           WHERE user_id = users.id AND idempotency_key = ?
+         )`,
       )
       .bind(
         userId,
@@ -125,19 +129,28 @@ export async function savePendingEmailSubscription(input: {
         input.verificationExpiresAt,
         now,
         now,
+        input.idempotencyKey,
       ),
     input.db
       .prepare(
         `INSERT INTO email_subscription_events (
            id, user_id, event_type, idempotency_key, created_at
-         ) VALUES (?, ?, 'bind_requested', ?, ?)
+         ) SELECT ?, id, 'bind_requested', ?, ? FROM users
+           WHERE profile_id = ? AND verification_token_hash = ?
          ON CONFLICT(user_id, idempotency_key) DO NOTHING`,
       )
-      .bind(crypto.randomUUID(), userId, input.idempotencyKey, now),
+      .bind(
+        crypto.randomUUID(),
+        input.idempotencyKey,
+        now,
+        input.profileId,
+        input.verificationTokenHash,
+      ),
   ])
   const subscription = await getEmailSubscription(input.db, input.profileId)
   if (!subscription) throw new Error('EMAIL_SUBSCRIPTION_SAVE_FAILED')
-  return { subscription, createdEvent: true }
+  // Only the transaction that stored this token may send its confirmation.
+  return { subscription, createdEvent: results[1].meta.changes === 1 }
 }
 
 export async function verifyPendingEmailSubscription(
@@ -159,24 +172,37 @@ export async function verifyPendingEmailSubscription(
     .first<UserRow>()
   if (!row) return undefined
   const now = new Date().toISOString()
-  await db.batch([
-    db
-      .prepare(
-        `UPDATE users SET email_status = 'verified',
-           verification_token_hash = NULL, verification_expires_at = NULL,
-           verified_at = ?, unsubscribed_at = NULL, updated_at = ?
-         WHERE id = ? AND profile_id = ? AND email_status = 'pending'`,
-      )
-      .bind(now, now, row.id, profileId),
+  const eventId = crypto.randomUUID()
+  const results = await db.batch([
     db
       .prepare(
         `INSERT INTO email_subscription_events (
            id, user_id, event_type, idempotency_key, created_at
-         ) VALUES (?, ?, 'verified', ?, ?)
+         ) SELECT ?, id, 'verified', ?, ? FROM users
+           WHERE id = ? AND profile_id = ? AND email_status = 'pending'
+             AND verification_token_hash = ? AND verification_expires_at > ?
          ON CONFLICT(user_id, idempotency_key) DO NOTHING`,
       )
-      .bind(crypto.randomUUID(), row.id, idempotencyKey, now),
+      .bind(
+        eventId,
+        idempotencyKey,
+        now,
+        row.id,
+        profileId,
+        verificationTokenHash,
+        now,
+      ),
+    db
+      .prepare(
+        `UPDATE users SET email_status = 'verified',
+         verification_token_hash = NULL, verification_expires_at = NULL,
+         verified_at = ?, unsubscribed_at = NULL, updated_at = ?
+       WHERE id = ? AND profile_id = ?
+         AND EXISTS (SELECT 1 FROM email_subscription_events WHERE id = ?)`,
+      )
+      .bind(now, now, row.id, profileId, eventId),
   ])
+  if (results[1].meta.changes !== 1) return undefined
   return getEmailSubscription(db, row.profile_id)
 }
 
@@ -196,9 +222,13 @@ export async function unsubscribeEmail(
       .prepare(
         `UPDATE users SET email_status = 'unsubscribed',
            verification_token_hash = NULL, verification_expires_at = NULL,
-           unsubscribed_at = ?, updated_at = ? WHERE id = ?`,
+           unsubscribed_at = ?, updated_at = ? WHERE id = ?
+           AND NOT EXISTS (
+             SELECT 1 FROM email_subscription_events
+             WHERE user_id = users.id AND idempotency_key = ?
+           )`,
       )
-      .bind(now, now, existing.id),
+      .bind(now, now, existing.id, idempotencyKey),
     db
       .prepare(
         `INSERT INTO email_subscription_events (

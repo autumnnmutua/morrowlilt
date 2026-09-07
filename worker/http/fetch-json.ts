@@ -40,6 +40,7 @@ async function readBoundedJson(
 ): Promise<unknown> {
   const announcedLength = Number(response.headers.get('content-length'))
   if (Number.isFinite(announcedLength) && announcedLength > maxResponseBytes) {
+    await response.body?.cancel()
     throw new ExternalServiceError(
       'EXTERNAL_RESPONSE_TOO_LARGE',
       'External response exceeded the configured limit',
@@ -144,6 +145,13 @@ export async function fetchJsonWithPolicy<T>(
   let lastError: ExternalServiceError | undefined
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (parentSignal?.aborted) {
+      throw new ExternalServiceError(
+        'EXTERNAL_ABORTED',
+        'External request was aborted',
+        false,
+      )
+    }
     const controller = new AbortController()
     let timedOut = false
     const abortFromParent = () => controller.abort(parentSignal?.reason)
@@ -160,6 +168,7 @@ export async function fetchJsonWithPolicy<T>(
         signal: controller.signal,
       })
       if (!response.ok) {
+        await response.body?.cancel()
         const retryable = response.status === 429 || response.status >= 500
         throw new ExternalServiceError(
           'EXTERNAL_HTTP_ERROR',
@@ -179,7 +188,13 @@ export async function fetchJsonWithPolicy<T>(
       }
       return value
     } catch (error) {
-      lastError = toExternalError(error, timedOut)
+      lastError = parentSignal?.aborted
+        ? new ExternalServiceError(
+            'EXTERNAL_ABORTED',
+            'External request was aborted',
+            false,
+          )
+        : toExternalError(error, timedOut)
       console.error(
         JSON.stringify({
           event: 'external_fetch_failed',

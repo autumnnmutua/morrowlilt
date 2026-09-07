@@ -75,6 +75,56 @@ async function answerSession(
 }
 
 describe('quiz generator and scoring', () => {
+  it('accumulates concurrent results from different sessions without losing mistake history', async () => {
+    const profileId = await profile('parallel-review')
+    const sessions = await Promise.all(
+      ['first', 'second'].map((key) =>
+        createQuizSession({
+          db: env.DB,
+          profileId,
+          count: 6,
+          types: ['spelling'],
+          mode: 'mixed',
+          idempotencyKey: `parallel-review-${key}`,
+        }),
+      ),
+    )
+    for (const session of sessions) {
+      for (const question of session.questions)
+        await submitQuizAnswer({
+          db: env.DB,
+          profileId,
+          sessionId: session.id,
+          questionId: question.id,
+          response: 'wrong',
+          durationMs: 100,
+          idempotencyKey: `parallel-answer-${question.id}`,
+        })
+    }
+    await Promise.all(
+      sessions.map((session) =>
+        completeQuizSession({
+          db: env.DB,
+          profileId,
+          sessionId: session.id,
+          businessDate: '2026-08-22',
+        }),
+      ),
+    )
+    const mistakes = await listMistakes(env.DB, profileId)
+    expect(mistakes.length).toBeGreaterThan(0)
+    for (const mistake of mistakes)
+      expect(mistake).toMatchObject({ errorCount: 2, mastery: 5 })
+    const events = await env.DB.prepare(
+      'SELECT mastery_before, mastery_after FROM mistake_book_events WHERE mistake_id = ? ORDER BY mastery_before DESC',
+    )
+      .bind(mistakes[0].id)
+      .all()
+    expect(events.results).toEqual([
+      { mastery_before: 35, mastery_after: 20 },
+      { mastery_before: 20, mastery_after: 5 },
+    ])
+  })
   it('keeps the expanded built-in question bank available', () => {
     expect(questionBank).toHaveLength(30)
   })

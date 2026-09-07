@@ -8,6 +8,7 @@ import {
   disableAccount,
   ensureAccountForIdentity,
   hashIdentityValue,
+  revokeIdentity,
 } from '../../worker/repository/accounts'
 import {
   configureUserEmailProvider,
@@ -54,6 +55,27 @@ class VerificationProvider implements EmailProvider {
 afterEach(() => vi.unstubAllGlobals())
 
 describe('multi-user account and ownership boundaries', () => {
+  it('keeps a revoked identity revoked until an explicit reauthorization', async () => {
+    const identity = {
+      issuer: 'https://local.invalid',
+      subject: 'revocation-audit',
+      email: ['revocation-audit', 'example.invalid'].join('@'),
+    }
+    const input = { db: env.DB, identity, defaultTimeZone: 'Asia/Shanghai' }
+    const original = await ensureAccountForIdentity(input)
+    await revokeIdentity({
+      db: env.DB,
+      issuer: identity.issuer,
+      subject: identity.subject,
+    })
+    await expect(ensureAccountForIdentity(input)).rejects.toThrow(
+      'ACCESS_IDENTITY_REVOKED',
+    )
+    expect(
+      (await ensureAccountForIdentity({ ...input, allowReauthorize: true }))
+        .profileId,
+    ).toBe(original.profileId)
+  })
   it('provisions concurrent first login once and preserves the profile on reauthorization', async () => {
     const identity = {
       issuer: 'https://local.invalid',

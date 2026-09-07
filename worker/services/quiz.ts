@@ -37,7 +37,7 @@ export class QuizDomainError extends Error {
 type SessionRow = {
   id: string
   mode: QuizMode
-  status: 'in_progress' | 'completed'
+  status: 'in_progress' | 'completed' | 'abandoned'
   question_fingerprint: string
   degraded_reason: string | null
   started_at: string
@@ -232,6 +232,13 @@ async function sessionView(
   db: D1Database,
   session: SessionRow,
 ): Promise<QuizSessionView> {
+  if (session.status === 'abandoned') {
+    throw new QuizDomainError(
+      'QUIZ_NOT_ACTIVE',
+      'Quiz session is no longer active',
+      409,
+    )
+  }
   const [questions, answers] = await Promise.all([
     getQuestions(db, session.id),
     getAnswers(db, session.id),
@@ -486,7 +493,11 @@ export async function submitQuizAnswer(input: {
             id, session_id, session_question_id, response_json,
             normalized_response, is_correct, score, error_reason,
             duration_ms, idempotency_key, answered_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ) SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+            WHERE EXISTS (
+              SELECT 1 FROM quiz_sessions WHERE id = ? AND profile_id = ?
+                AND status = 'in_progress'
+            )
           ON CONFLICT(session_question_id) DO NOTHING`,
         )
         .bind(
@@ -501,11 +512,25 @@ export async function submitQuizAnswer(input: {
           input.durationMs,
           input.idempotencyKey,
           now,
+          input.sessionId,
+          input.profileId,
         ),
       input.db
-        .prepare(`UPDATE quiz_sessions SET last_activity_at = ? WHERE id = ?`)
+        .prepare(
+          `UPDATE quiz_sessions SET last_activity_at = ? WHERE id = ? AND status = 'in_progress'`,
+        )
         .bind(now, input.sessionId),
     ])
+    const saved = await input.db
+      .prepare('SELECT id FROM quiz_answers WHERE session_question_id = ?')
+      .bind(input.questionId)
+      .first()
+    if (!saved)
+      throw new QuizDomainError(
+        'QUIZ_NOT_ACTIVE',
+        'Quiz session is no longer active',
+        409,
+      )
   }
   const counts = await input.db
     .prepare(
@@ -667,109 +692,112 @@ async function buildReport(
   }
 }
 
-async function prepareMistakeUpdates(
+function prepareMistakeUpdates(
   db: D1Database,
   profileId: string,
   sessionId: string,
   report: QuizReport,
   businessDate: string,
-): Promise<D1PreparedStatement[]> {
+): D1PreparedStatement[] {
   const now = new Date().toISOString()
-  const bankQuestionIds = [
-    ...new Set(report.items.map((item) => item.bankQuestionId)),
-  ]
-  const placeholders = bankQuestionIds.map(() => '?').join(', ')
-  const existingRows = bankQuestionIds.length
-    ? await db
-        .prepare(
-          `SELECT id, bank_question_id, status, error_count, correct_streak,
-                  mastery, next_review_date, mastered_at, dismissed_at
-           FROM mistake_book
-           WHERE profile_id = ? AND bank_question_id IN (${placeholders})`,
-        )
-        .bind(profileId, ...bankQuestionIds)
-        .all<MistakeRow>()
-    : { results: [] as MistakeRow[] }
-  const existingByQuestion = new Map(
-    existingRows.results.map((row) => [row.bank_question_id, row]),
-  )
   const statements: D1PreparedStatement[] = []
   for (const item of report.items) {
-    const existing = existingByQuestion.get(item.bankQuestionId)
-    if (item.isCorrect && existing?.dismissed_at) continue
-    if (item.isCorrect && !existing) continue
-    const mistakeId = existing?.id ?? crypto.randomUUID()
-    const before = existing?.mastery ?? 35
-    const streak = item.isCorrect ? (existing?.correct_streak ?? 0) + 1 : 0
-    const after = item.isCorrect
-      ? Math.min(100, before + 25)
-      : Math.max(0, before - 15)
-    const mastered = item.isCorrect && streak >= 2 && after >= masteryThreshold
+    const newMistakeId = crypto.randomUUID()
+    const eventId = crypto.randomUUID()
+    const correct = item.isCorrect ? 1 : 0
+    // Every read and calculation below runs inside the completion batch. Two
+    // sessions reviewing the same word must build on each other's committed state.
     statements.push(
       db
         .prepare(
-          `INSERT INTO mistake_book (
-             id, profile_id, bank_question_id, status, error_count,
-             correct_streak, mastery, first_wrong_at, last_reviewed_at,
-             next_review_date, mastered_at, dismissed_at
-           )
-           SELECT ?, ?, ?, 'active', 1, 0, ?, ?, ?, date(?, '+1 day'), NULL, NULL
-           WHERE EXISTS (
-             SELECT 1 FROM quiz_sessions
-             WHERE id = ? AND profile_id = ? AND status = 'in_progress'
-           )
-           ON CONFLICT(profile_id, bank_question_id) DO UPDATE SET
-             status = ?,
-             error_count = mistake_book.error_count + ?,
-             correct_streak = ?, mastery = ?, last_reviewed_at = ?,
-             next_review_date = date(?, ?), mastered_at = ?, dismissed_at = NULL`,
+          `
+        INSERT INTO mistake_book (
+          id, profile_id, bank_question_id, status, error_count, correct_streak,
+          mastery, first_wrong_at, last_reviewed_at, next_review_date, mastered_at, dismissed_at
+        )
+        SELECT ?, ?, ?, 'active', 1, 0, 35, ?, ?, date(?, '+1 day'), NULL, NULL
+        WHERE ? = 0 AND EXISTS (
+          SELECT 1 FROM quiz_sessions WHERE id = ? AND profile_id = ? AND status = 'in_progress'
+        )
+        ON CONFLICT(profile_id, bank_question_id) DO NOTHING
+      `,
         )
         .bind(
-          mistakeId,
+          newMistakeId,
           profileId,
           item.bankQuestionId,
-          after,
           now,
           now,
           businessDate,
+          correct,
           sessionId,
           profileId,
-          mastered ? 'mastered' : 'active',
-          item.isCorrect ? 0 : 1,
-          streak,
-          after,
-          now,
-          businessDate,
-          item.isCorrect ? '+3 day' : '+1 day',
-          mastered ? now : null,
         ),
       db
         .prepare(
-          `INSERT INTO mistake_book_events (
-             id, mistake_id, session_id, outcome, mastery_before, mastery_after, created_at
-           )
-           SELECT ?, ?, ?, ?, ?, ?, ?
-           WHERE EXISTS (
-             SELECT 1 FROM quiz_sessions
-             WHERE id = ? AND profile_id = ? AND status = 'in_progress'
-           )`,
+          `
+        INSERT INTO mistake_book_events (
+          id, mistake_id, session_id, outcome, mastery_before, mastery_after, created_at
+        )
+        SELECT ?, id, ?, ?, mastery,
+          CASE WHEN ? = 1 THEN MIN(100, mastery + 25) ELSE MAX(0, mastery - 15) END, ?
+        FROM mistake_book
+        WHERE profile_id = ? AND bank_question_id = ?
+          AND (? = 0 OR dismissed_at IS NULL)
+          AND EXISTS (
+            SELECT 1 FROM quiz_sessions WHERE id = ? AND profile_id = ? AND status = 'in_progress'
+          )
+      `,
         )
         .bind(
-          crypto.randomUUID(),
-          mistakeId,
+          eventId,
           sessionId,
           item.isCorrect ? 'correct' : 'incorrect',
-          before,
-          after,
+          correct,
           now,
+          profileId,
+          item.bankQuestionId,
+          correct,
           sessionId,
           profileId,
+        ),
+      db
+        .prepare(
+          `
+        UPDATE mistake_book SET
+          status = CASE WHEN ? = 1 AND correct_streak + 1 >= 2 AND MIN(100, mastery + 25) >= ?
+            THEN 'mastered' ELSE 'active' END,
+          mastered_at = CASE WHEN ? = 1 AND correct_streak + 1 >= 2 AND MIN(100, mastery + 25) >= ?
+            THEN ? ELSE NULL END,
+          correct_streak = CASE WHEN ? = 1 THEN correct_streak + 1 ELSE 0 END,
+          mastery = CASE WHEN ? = 1 THEN MIN(100, mastery + 25) ELSE MAX(0, mastery - 15) END,
+          error_count = error_count + CASE WHEN ? = 0 AND id <> ? THEN 1 ELSE 0 END,
+          last_reviewed_at = ?, next_review_date = date(?, ?), dismissed_at = NULL
+        WHERE profile_id = ? AND bank_question_id = ?
+          AND EXISTS (SELECT 1 FROM mistake_book_events WHERE id = ? AND mistake_id = mistake_book.id)
+      `,
+        )
+        .bind(
+          correct,
+          masteryThreshold,
+          correct,
+          masteryThreshold,
+          now,
+          correct,
+          correct,
+          correct,
+          newMistakeId,
+          now,
+          businessDate,
+          item.isCorrect ? '+3 day' : '+1 day',
+          profileId,
+          item.bankQuestionId,
+          eventId,
         ),
     )
   }
   return statements
 }
-
 export async function completeQuizSession(input: {
   db: D1Database
   profileId: string
@@ -784,8 +812,16 @@ export async function completeQuizSession(input: {
       404,
     )
   if (session.status === 'completed') return buildReport(input.db, session)
+  if (session.status !== 'in_progress') {
+    throw new QuizDomainError(
+      'QUIZ_NOT_ACTIVE',
+      'Quiz session is no longer active',
+      409,
+    )
+  }
   const report = await buildReport(input.db, session)
-  if (report.items.some((item) => item.response === '')) {
+  const answered = await getAnswers(input.db, session.id)
+  if (answered.length !== report.questionCount) {
     throw new QuizDomainError(
       'QUIZ_INCOMPLETE',
       'Answer every question before completing',
@@ -793,7 +829,7 @@ export async function completeQuizSession(input: {
     )
   }
   const now = new Date().toISOString()
-  const statements = await prepareMistakeUpdates(
+  const statements = prepareMistakeUpdates(
     input.db,
     input.profileId,
     input.sessionId,
@@ -817,7 +853,17 @@ export async function completeQuizSession(input: {
         input.profileId,
       ),
   )
-  await input.db.batch(statements)
+  const results = await input.db.batch(statements)
+  if (results.at(-1)?.meta.changes !== 1) {
+    const latest = await getSession(input.db, input.profileId, input.sessionId)
+    if (latest?.status !== 'completed') {
+      throw new QuizDomainError(
+        'QUIZ_NOT_ACTIVE',
+        'Quiz session is no longer active',
+        409,
+      )
+    }
+  }
   return report
 }
 

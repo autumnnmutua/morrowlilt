@@ -274,7 +274,7 @@ export async function requestEmailBinding(input: {
       subject: '确认每日学习邮件',
       html: message.html,
       text: message.text,
-      idempotencyKey: `email-binding/${saved.subscription.id}/${saved.subscription.version}`,
+      idempotencyKey: `email-binding/${saved.subscription.id}/${await sha256(input.idempotencyKey)}`,
     })
   }
   return toPublic(saved.subscription, input.timeZone)

@@ -6,6 +6,7 @@ import {
 } from 'cloudflare:test'
 import { describe, expect, it, vi } from 'vitest'
 import worker from '../../worker/index'
+import { ensureAppProfile } from '../../worker/services/learning'
 
 describe('Worker API and D1 integration', () => {
   it('returns an ok health response after a real D1 query', async () => {
@@ -40,6 +41,12 @@ describe('Worker API and D1 integration', () => {
   })
 
   it('persists seed content before returning it and keeps the snapshot stable', async () => {
+    await ensureAppProfile({
+      db: env.DB,
+      profileId: 'default',
+      timeZone: 'Asia/Shanghai',
+      now: new Date('2026-08-20T00:00:00Z'),
+    })
     const url = 'https://example.invalid/api/daily-content?date=2026-08-20'
     const first = await exports.default.fetch(new Request(url))
     const second = await exports.default.fetch(new Request(url))
@@ -68,6 +75,12 @@ describe('Worker API and D1 integration', () => {
   })
 
   it('uses a different built-in seed when no online Provider is configured', async () => {
+    await ensureAppProfile({
+      db: env.DB,
+      profileId: 'default',
+      timeZone: 'Asia/Shanghai',
+      now: new Date('2026-08-20T00:00:00Z'),
+    })
     const response = await exports.default.fetch(
       new Request('https://example.invalid/api/daily-content?date=2026-08-21'),
     )

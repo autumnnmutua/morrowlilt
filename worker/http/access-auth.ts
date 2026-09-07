@@ -61,6 +61,7 @@ export async function verifyAccessJwt(
     algorithms: ['RS256'],
     audience: config.audience,
     issuer: config.issuer,
+    requiredClaims: ['exp', 'iat', 'sub'],
   })
   return result.payload
 }

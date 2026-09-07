@@ -233,6 +233,15 @@ export async function tryInsertProfileDailyContent(input: {
       input.contentDate,
     )
     if (concurrent) return concurrent
+    const message = error instanceof Error ? error.message : ''
+    if (
+      [
+        'UNIQUE constraint failed: profile_daily_content.content_date, profile_daily_content.fingerprint',
+        'UNIQUE constraint failed: profile_daily_content.profile_id, profile_daily_content.fingerprint',
+        'UNIQUE constraint failed: profile_daily_content_components.profile_id, profile_daily_content_components.component_hash',
+      ].some((constraint) => message.includes(constraint))
+    )
+      return undefined
     throw error
   }
   return getProfileDailyContent(input.db, input.profileId, input.contentDate)
